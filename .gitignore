@@ -1,0 +1,6 @@
+apis.exc.txt
+linkdin Profile.pdf
+*.log
+__pycache__/
+.env
+*.egg-info/
