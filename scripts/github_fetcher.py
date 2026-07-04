@@ -7,6 +7,7 @@ HEADERS = {"Authorization": f"Bearer {GH_TOKEN}"}
 REPO_BLACKLIST = [
     "Haris-ahmed83", "test", "test_file", "project1_morning.py",
     "Full_stack_projects", "python-all-series",
+    "linkedin-auto-poster", "config-file-manager",
 ]
 
 REPO_PRIORITY = {
