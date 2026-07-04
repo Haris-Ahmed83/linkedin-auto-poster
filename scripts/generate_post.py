@@ -3,6 +3,7 @@ import json
 import random
 from datetime import datetime, timezone
 from github_fetcher import get_best_repo, fetch_repo_details
+from news_fetcher import fetch_hn_stories, filter_ai_stories, build_news_post, get_trending_repos
 from templates import get_template_for_day
 from linkedin_api import LinkedInAPI
 from config import (
@@ -181,11 +182,55 @@ def generate_post():
     template_info = get_template_for_day(weekday, week_parity)
     template_key = template_info["key"]
 
+    # 40% chance: AI/Tech news post, 60% chance: GitHub project post
+    post_type = random.choices(["news", "github"], weights=[40, 60])[0]
+    
+    if post_type == "news":
+        stories = fetch_hn_stories()
+        ai_stories = filter_ai_stories(stories)
+        if ai_stories:
+            story = random.choice(ai_stories[:5])
+            post_text = build_news_post(story)
+            hashtags = "\n#AI #Tech"
+            post_text = post_text.strip() + hashtags
+            
+            result_data = {
+                "template": "news",
+                "repo": "hacker-news",
+                "score": story["score"],
+                "post": post_text,
+                "timestamp": today.isoformat(),
+            }
+            if len(post_text) > 3000:
+                lines = post_text.split("\n")
+                post_text = "\n".join(lines[:40])
+            return result_data
+
+    # Fallback: GitHub project post
     cooled_down = load_cooldown()
     result = get_best_repo(cooled_down_repos=set(cooled_down))
     
     if not result:
-        print("No suitable repo found for today. Skipping.")
+        print("No suitable repo found for today. Trying news fallback...")
+        stories = fetch_hn_stories()
+        ai_stories = filter_ai_stories(stories)
+        if ai_stories:
+            story = random.choice(ai_stories[:5])
+            post_text = build_news_post(story)
+            hashtags = "\n#AI #Tech"
+            post_text = post_text.strip() + hashtags
+            result_data = {
+                "template": "news",
+                "repo": "hacker-news",
+                "score": story["score"],
+                "post": post_text,
+                "timestamp": today.isoformat(),
+            }
+            if len(post_text) > 3000:
+                lines = post_text.split("\n")
+                post_text = "\n".join(lines[:40])
+            return result_data
+        print("No post generated.")
         return None
 
     score, repo_name, description, details = result
