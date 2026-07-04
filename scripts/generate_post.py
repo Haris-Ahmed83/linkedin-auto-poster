@@ -178,8 +178,8 @@ def generate_post():
     weekday = today.weekday()
     week_parity = today.isocalendar()[1] % 2
 
-    template = get_template_for_day(weekday, week_parity)
-    template_key = template["name"].lower().replace(" / ", "_").replace(" ", "_")
+    template_info = get_template_for_day(weekday, week_parity)
+    template_key = template_info["key"]
 
     cooled_down = load_cooldown()
     result = get_best_repo(cooled_down_repos=set(cooled_down))
