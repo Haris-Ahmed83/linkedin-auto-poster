@@ -20,6 +20,6 @@ POSTING_TIMES_PKT = {
 }
 
 COOLDOWN_DAYS = 7
-DRY_RUN = True  # First week: creates issues instead of posting
+DRY_RUN = False  # Live posting enabled
 MAX_POST_LENGTH = 3000
 MIN_POST_LENGTH = 1200
