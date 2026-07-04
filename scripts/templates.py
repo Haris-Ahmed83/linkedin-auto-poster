@@ -33,14 +33,20 @@ TEMPLATES = {
 
 def get_template_for_day(weekday_int, week_parity):
     mapping = {
+        0: "progress_journey",
         1: "how_i_built",
         2: "hot_take",
         3: "lesson_learned",
+        4: "data_numbers",
+        5: "progress_journey",
     }
     if week_parity == 1:
         mapping = {
-            1: "data_numbers",
-            2: "progress_journey",
-            3: "how_i_built",
+            0: "data_numbers",
+            1: "progress_journey",
+            2: "how_i_built",
+            3: "hot_take",
+            4: "lesson_learned",
+            5: "data_numbers",
         }
     return TEMPLATES.get(mapping.get(weekday_int, "how_i_built"), TEMPLATES["how_i_built"])
