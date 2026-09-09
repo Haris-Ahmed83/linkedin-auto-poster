@@ -270,12 +270,37 @@ def build_trip_post(topic_item):
     
     return "\n".join(post_lines)
 
+STATE_FILE = "posted_topics.json"
+
 def generate_post():
     today = datetime.now(timezone.utc)
-    weekday = today.weekday()
     
-    # Select topic based on day to maintain structured variety across all 6 core topics
-    topic_item = CORE_TOPICS[weekday % len(CORE_TOPICS)]
+    # Load past indices to ensure every run produces a new topic
+    posted_indices = []
+    if os.path.exists(STATE_FILE):
+        try:
+            with open(STATE_FILE, "r") as f:
+                posted_indices = json.load(f)
+        except Exception:
+            posted_indices = []
+            
+    # Find available topic indices not used recently
+    available = [i for i in range(len(CORE_TOPICS)) if i not in posted_indices]
+    if not available:
+        # Reset once all 6 topics have been used
+        posted_indices = []
+        available = list(range(len(CORE_TOPICS)))
+        
+    next_idx = random.choice(available)
+    posted_indices.append(next_idx)
+    
+    try:
+        with open(STATE_FILE, "w") as f:
+            json.dump(posted_indices, f)
+    except Exception as e:
+        print(f"[GeneratePost] Warning: could not save topic state: {e}")
+
+    topic_item = CORE_TOPICS[next_idx]
     post_text = build_trip_post(topic_item)
     
     result_data = {
@@ -288,6 +313,7 @@ def generate_post():
     }
     
     return result_data
+
 
 def post_to_linkedin(result):
     if not LINKEDIN_ACCESS_TOKEN:
