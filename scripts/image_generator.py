@@ -1,10 +1,10 @@
 import os
-import json
 import base64
 import requests
 from config import GEMINI_API_KEY
 
-IMAGEN_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict"
+# Use Gemini 2.0 Flash image generation (generateContent with responseModalities)
+GEMINI_IMAGE_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-preview-image-generation:generateContent"
 
 def create_image_prompt(post_data):
     """
@@ -38,31 +38,34 @@ def generate_image_bytes(post_data):
     prompt = create_image_prompt(post_data)
     print(f"[ImageGen] Generating image with Gemini Imagen API for '{post_data.get('repo', 'post')}'...")
 
-    url = f"{IMAGEN_ENDPOINT}?key={GEMINI_API_KEY}"
+    url = f"{GEMINI_IMAGE_ENDPOINT}?key={GEMINI_API_KEY}"
     headers = {"Content-Type": "application/json"}
     payload = {
-        "instances": [
-            {"prompt": prompt}
+        "contents": [
+            {
+                "parts": [
+                    {"text": prompt}
+                ]
+            }
         ],
-        "parameters": {
-            "sampleCount": 1,
-            "aspectRatio": "1:1",
-            "outputMimeType": "image/jpeg"
+        "generationConfig": {
+            "responseModalities": ["IMAGE", "TEXT"]
         }
     }
 
     try:
-        resp = requests.post(url, headers=headers, json=payload, timeout=45)
+        resp = requests.post(url, headers=headers, json=payload, timeout=60)
         if resp.status_code == 200:
             data = resp.json()
-            predictions = data.get("predictions", [])
-            if predictions and "bytesBase64Encoded" in predictions[0]:
-                b64_str = predictions[0]["bytesBase64Encoded"]
-                image_bytes = base64.b64decode(b64_str)
-                print(f"[ImageGen] Image generated successfully! Size: {len(image_bytes)} bytes.")
-                return image_bytes
-            else:
-                print(f"[ImageGen] Unexpected API response structure: {data}")
+            candidates = data.get("candidates", [])
+            for candidate in candidates:
+                for part in candidate.get("content", {}).get("parts", []):
+                    if "inlineData" in part:
+                        b64_str = part["inlineData"]["data"]
+                        image_bytes = base64.b64decode(b64_str)
+                        print(f"[ImageGen] Image generated successfully! Size: {len(image_bytes)} bytes.")
+                        return image_bytes
+            print(f"[ImageGen] No image found in response: {data}")
         else:
             print(f"[ImageGen] API call failed with status {resp.status_code}: {resp.text}")
     except Exception as e:
