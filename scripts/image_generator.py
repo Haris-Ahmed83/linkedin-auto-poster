@@ -107,29 +107,40 @@ def _try_gemini_keys(prompt):
             print(f"[ImageGen] Gemini failed: {resp.status_code}")
 
 def _try_pollinations(prompt):
-    """Reliable HD image generation via Pollinations.ai (Flux model, 1200x630, LinkedIn optimal)."""
-    # LinkedIn optimal: 1200x627 minimum for full-width display
+    """Reliable HD image via Pollinations.ai — forces fresh generation with unique seed."""
+    import time
     encoded = urllib.parse.quote(prompt, safe="")
+    seed = int(time.time()) % 99999  # unique seed each run forces fresh generation
+
     urls = [
-        f"https://image.pollinations.ai/prompt/{encoded}?width=1200&height=627&model=flux&nologo=true&enhance=true&seed={hash(prompt) % 9999}",
-        f"https://image.pollinations.ai/prompt/{encoded}?width=1200&height=627&model=flux&nologo=true&enhance=true",
-        f"https://image.pollinations.ai/prompt/{encoded}?width=1200&height=627&nologo=true",
+        f"https://image.pollinations.ai/prompt/{encoded}?width=1920&height=1080&model=flux&nologo=true&enhance=true&seed={seed}",
+        f"https://image.pollinations.ai/prompt/{encoded}?width=1200&height=627&model=flux&nologo=true&enhance=true&seed={seed}",
+        f"https://image.pollinations.ai/prompt/{encoded}?width=1200&height=627&model=flux&nologo=true&seed={seed}",
     ]
     for url in urls:
         try:
-            print(f"[ImageGen] Trying Pollinations (1200x627 HD)...")
-            resp = requests.get(url, timeout=60)
+            print(f"[ImageGen] Requesting Pollinations HD (seed={seed})...")
+            resp = requests.get(url, timeout=90)
             if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("image"):
                 size_kb = len(resp.content) // 1024
-                print(f"[ImageGen] ✅ Image generated! Size: {size_kb}KB")
-                if size_kb < 10:
-                    print(f"[ImageGen] ⚠️ Image too small ({size_kb}KB), retrying...")
+                print(f"[ImageGen] ✅ Image received! Size: {size_kb}KB")
+                if size_kb < 50:
+                    print(f"[ImageGen] ⚠️ Image too small ({size_kb}KB) — likely a cached thumbnail. Retrying...")
                     continue
                 return resp.content
             else:
-                print(f"[ImageGen] Pollinations status: {resp.status_code}")
+                print(f"[ImageGen] Pollinations returned: {resp.status_code}")
         except Exception as e:
             print(f"[ImageGen] Pollinations error: {e}")
+    # Last resort: return whatever we got even if small
+    try:
+        resp = requests.get(urls[1], timeout=60)
+        if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("image"):
+            size_kb = len(resp.content) // 1024
+            print(f"[ImageGen] ⚠️ Using best-effort image: {size_kb}KB")
+            return resp.content
+    except Exception:
+        pass
     return None
 
 
