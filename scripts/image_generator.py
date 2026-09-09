@@ -7,53 +7,54 @@ POLLINATIONS_URL = "https://image.pollinations.ai/prompt/{prompt}?width=1216&hei
 
 def create_image_prompt(post_data):
     """
-    Dynamically constructs a professional 4K image prompt strictly based on 
-    the post text content, topic, and key points, excluding text artifacts.
+    Dynamically constructs professional text-free 4K visual prompts
+    tailored to the post topic and context.
     """
     topic = post_data.get("topic", post_data.get("repo", "Tech Innovation"))
     text  = post_data.get("post", "")
 
-    # Clean text instruction to prevent blurred AI font gibberish
-    no_text_suffix = ", no text, no words, no letters, no typography, clean visual illustration, 8k resolution, photorealistic studio render"
+    no_text = ", no text, no words, no letters, clean visual graphic design, ultra-sharp 8k resolution, photorealistic studio render"
 
     if "ghl" in topic.lower() or "gohighlevel" in text.lower():
         prompt = (
-            "Ultra-professional 3D marketing automation hub visual representation for GoHighLevel. "
-            "Clean isometric glass CRM dashboard, glowing green workflow nodes, lead pipeline charts, dark navy slate aesthetic"
-            + no_text_suffix
+            "Professional 3D glassmorphism marketing automation hub graphic. "
+            "Sleek glowing emerald green workflow nodes, dark slate background, modern SaaS UI visualization"
+            + no_text
         )
     elif "ai" in topic.lower() or "automation" in text.lower():
         prompt = (
-            "Futuristic 3D concept art of artificial intelligence workflow automation. "
-            "Translucent glowing cyan and purple glass neural nodes, dark background, Unreal Engine 5 render, ray tracing"
-            + no_text_suffix
+            "Futuristic 3D artificial intelligence neural network data pipeline visual. "
+            "Translucent glowing cyan glass nodes, dark background, octane render, hyper detailed"
+            + no_text
         )
     elif "crm" in topic.lower() or "pipeline" in text.lower() or "sales" in text.lower():
         prompt = (
-            "Modern 3D sales analytics dashboard mockup floating visual elements. "
-            "Clean glassmorphism UI cards, glowing green growth trend chart, sleek deal pipeline columns, dark backdrop"
-            + no_text_suffix
+            "Professional 3D glassmorphism tech dashboard visual, glowing green analytics graph, "
+            "sleek dark blue slate background, minimalist modern SaaS vector graphic"
+            + no_text
         )
     elif "funnel" in topic.lower() or "conversion" in text.lower():
         prompt = (
-            "High-end 3D visual art of a glowing digital conversion funnel. "
-            "Streams of golden light particles entering a sleek translucent funnel and transforming into green success badges"
-            + no_text_suffix
+            "High-end 3D visual concept art of a glowing digital conversion funnel, "
+            "golden light particles, dark navy corporate background, luxury tech aesthetic"
+            + no_text
         )
     elif "full-stack" in topic.lower() or "dev" in topic.lower() or "stack" in text.lower():
         prompt = (
-            "Sleek 3D developer workspace aesthetic, holographic code structures floating over a futuristic glass desk setup, dark neon lighting"
-            + no_text_suffix
+            "Sleek 3D developer desk workspace aesthetic, ultrawide monitor with glowing code interface structure, "
+            "ambient violet neon lighting, sharp focus"
+            + no_text
         )
     elif "robot" in topic.lower() or "hardware" in topic.lower():
         prompt = (
-            "Close-up detailed 3D render of a futuristic precision robotic arm assembly, carbon fiber joints, glowing micro-circuitry blueprints"
-            + no_text_suffix
+            "Detailed 3D render of a futuristic precision robotic arm assembly, carbon fiber joints, "
+            "glowing micro-circuitry blueprints, dramatic studio lighting"
+            + no_text
         )
     else:
         prompt = (
-            f"Professional 3D isometric tech visual graphic representing '{topic}', sleek glassmorphism elements, dark slate background, glowing green accents"
-            + no_text_suffix
+            f"Professional 3D isometric tech graphic representing '{topic}', sleek glassmorphism elements, dark slate background, glowing green accents"
+            + no_text
         )
 
     return prompt
