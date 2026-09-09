@@ -6,6 +6,7 @@ from github_fetcher import get_best_repo, fetch_repo_details
 from news_fetcher import fetch_hn_stories, filter_ai_stories, build_news_post, get_trending_repos
 from templates import get_template_for_day
 from linkedin_api import LinkedInAPI
+from image_generator import generate_image_bytes
 from config import (
     LINKEDIN_ACCESS_TOKEN, LINKEDIN_USER_URN, DRY_RUN,
     GH_TOKEN, POSTING_DAYS, COOLDOWN_DAYS,
@@ -288,8 +289,19 @@ def post_to_linkedin(result):
             author_urn = LINKEDIN_USER_URN
         else:
             author_urn = api.get_user_urn()
-        
-        response = api.create_post(author_urn, result["post"])
+
+        image_urn = None
+        # Try generating and uploading image
+        image_bytes = generate_image_bytes(result)
+        if image_bytes:
+            try:
+                print("Uploading generated image to LinkedIn media assets...")
+                image_urn = api.upload_image_asset(author_urn, image_bytes)
+                print(f"Image uploaded successfully! Asset URN: {image_urn}")
+            except Exception as ie:
+                print(f"Failed to upload image to LinkedIn: {ie}. Proceeding with text-only post.")
+
+        response = api.create_post(author_urn, result["post"], image_urn=image_urn)
         print(f"Posted successfully! Repo: {result['repo']}")
         print(f"Response: {response}")
         return True
