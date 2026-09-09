@@ -42,10 +42,13 @@ class LinkedInAPI:
         raise Exception(f"Register image upload failed: {resp.status_code} {resp.text}")
 
     def upload_image_bytes(self, upload_url, image_bytes):
+        # Auto-detect PNG vs JPEG by magic bytes to avoid silent rejection
+        content_type = "image/png" if image_bytes[:4] == b'\x89PNG' else "image/jpeg"
         headers = {
             "Authorization": f"Bearer {self.access_token}",
-            "Content-Type": "image/jpeg"
+            "Content-Type": content_type,
         }
+        print(f"[LinkedIn] Uploading image as {content_type}, size: {len(image_bytes)//1024}KB")
         resp = requests.put(upload_url, headers=headers, data=image_bytes)
         if resp.status_code in [200, 201]:
             return True

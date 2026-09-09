@@ -60,23 +60,6 @@ def create_image_prompt(post_data):
     return prompt
 
 
-def _try_pollinations(prompt):
-    """Free image generation via Pollinations.ai — no API key needed."""
-    try:
-        encoded = urllib.parse.quote(prompt, safe="")
-        url     = POLLINATIONS_URL.format(prompt=encoded)
-        print(f"[ImageGen] Trying Pollinations.ai (free)...")
-        resp    = requests.get(url, timeout=40)
-        if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("image"):
-            print(f"[ImageGen] ✅ Pollinations image generated! Size: {len(resp.content)//1024}KB")
-            return resp.content
-        else:
-            print(f"[ImageGen] Pollinations failed: {resp.status_code}")
-    except Exception as e:
-        print(f"[ImageGen] Pollinations error: {e}")
-    return None
-
-
 def _try_gemini_keys(prompt):
     """Try all configured Gemini keys, skip on 429."""
     for api_key in GEMINI_API_KEYS:
@@ -123,59 +106,45 @@ def _try_gemini_keys(prompt):
         else:
             print(f"[ImageGen] Gemini failed: {resp.status_code}")
 
-    return None
-
-
-def _try_huggingface(prompt):
-    """Generate high-quality HD image via HuggingFace Inference API using FLUX.1-schnell model."""
-    if not HF_TOKEN:
-        return None
-    try:
-        print("[ImageGen] Trying HuggingFace Inference API (FLUX.1-schnell)...")
-        url = "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell"
-        headers = {
-            "Authorization": f"Bearer {HF_TOKEN}",
-            "Content-Type": "application/json"
-        }
-        payload = {
-            "inputs": prompt,
-            "parameters": {"width": 1200, "height": 630}
-        }
-        resp = requests.post(url, headers=headers, json=payload, timeout=60)
-        if resp.status_code == 200:
-            print(f"[ImageGen] ✅ HuggingFace FLUX image generated! Size: {len(resp.content)//1024}KB")
-            return resp.content
-        else:
-            print(f"[ImageGen] HuggingFace API returned status: {resp.status_code}")
-    except Exception as e:
-        print(f"[ImageGen] HuggingFace error: {e}")
+def _try_pollinations(prompt):
+    """Reliable HD image generation via Pollinations.ai (Flux model, 1200x630, LinkedIn optimal)."""
+    # LinkedIn optimal: 1200x627 minimum for full-width display
+    encoded = urllib.parse.quote(prompt, safe="")
+    urls = [
+        f"https://image.pollinations.ai/prompt/{encoded}?width=1200&height=627&model=flux&nologo=true&enhance=true&seed={hash(prompt) % 9999}",
+        f"https://image.pollinations.ai/prompt/{encoded}?width=1200&height=627&model=flux&nologo=true&enhance=true",
+        f"https://image.pollinations.ai/prompt/{encoded}?width=1200&height=627&nologo=true",
+    ]
+    for url in urls:
+        try:
+            print(f"[ImageGen] Trying Pollinations (1200x627 HD)...")
+            resp = requests.get(url, timeout=60)
+            if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("image"):
+                size_kb = len(resp.content) // 1024
+                print(f"[ImageGen] ✅ Image generated! Size: {size_kb}KB")
+                if size_kb < 10:
+                    print(f"[ImageGen] ⚠️ Image too small ({size_kb}KB), retrying...")
+                    continue
+                return resp.content
+            else:
+                print(f"[ImageGen] Pollinations status: {resp.status_code}")
+        except Exception as e:
+            print(f"[ImageGen] Pollinations error: {e}")
     return None
 
 
 def generate_image_bytes(post_data):
     """
     Generate image for a LinkedIn post.
-    Strategy: Try Gemini keys first, then HuggingFace FLUX API, fallback to Pollinations.ai.
     Returns raw image bytes or None.
     """
     prompt = create_image_prompt(post_data)
-    print(f"[ImageGen] Generating image for '{post_data.get('repo', 'post')}'...")
+    print(f"[ImageGen] Generating image for topic: '{post_data.get('topic', post_data.get('repo', 'post'))}'")
+    print(f"[ImageGen] Prompt: {prompt[:120]}...")
 
-    # 1. Try Gemini (if keys available)
-    if GEMINI_API_KEYS:
-        img = _try_gemini_keys(prompt)
-        if img:
-            return img
-
-    # 2. Try HuggingFace FLUX API (using user HF_TOKEN)
-    img = _try_huggingface(prompt)
-    if img:
-        return img
-
-    # 3. Free fallback: Pollinations.ai
     img = _try_pollinations(prompt)
     if img:
         return img
 
-    print("[ImageGen] All methods failed. Falling back to text-only post.")
+    print("[ImageGen] ❌ Image generation failed — post will go text-only.")
     return None
