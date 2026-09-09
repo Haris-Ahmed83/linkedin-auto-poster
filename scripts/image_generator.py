@@ -77,60 +77,74 @@ def create_image_prompt(post_data):
     return prompt
 
 
-def _try_huggingface(prompt):
+def _try_stable_horde(prompt):
     """
-    Generate HD image via HuggingFace Inference Router.
-    Only uses router.huggingface.co (api-inference.huggingface.co is deprecated).
-    Tries models known to work on the free hf-inference provider.
+    Free HD image via Stable Horde — community GPU pool.
+    Anonymous key works with no registration. Produces proper 1024x576 images.
+    May take 2-5 minutes; fine for automated daily posting.
     """
-    if not HF_TOKEN:
-        print("[ImageGen] No HF_TOKEN configured, skipping HuggingFace.")
-        return None
+    HORDE_KEY = "0000000000"  # anonymous free key; stablehorde.net/register for faster
 
-    # Models confirmed supported by hf-inference free provider for text-to-image
-    models = [
-        "stabilityai/stable-diffusion-2-1",
-        "stabilityai/sdxl-turbo",
-        "Lykon/dreamshaper-xl-lightning",
-        "SG161222/RealVisXL_V4.0",
-        "dataautogpt3/ProteusV0.4",
-    ]
+    print("[ImageGen] Submitting to Stable Horde (free community GPU)...")
+    try:
+        submit = requests.post(
+            "https://stablehorde.net/api/v2/generate/async",
+            headers={"apikey": HORDE_KEY, "Content-Type": "application/json"},
+            json={
+                "prompt": prompt,
+                "params": {
+                    "width": 1024,
+                    "height": 576,
+                    "steps": 25,
+                    "n": 1,
+                    "sampler_name": "k_euler_a",
+                    "cfg_scale": 7.5,
+                },
+                "models": ["Dreamshaper", "stable_diffusion_xl", "Stable Diffusion XL 1.0"],
+                "r2": True,
+                "nsfw": False,
+            },
+            timeout=30,
+        )
+        if submit.status_code != 202:
+            print(f"[ImageGen] Stable Horde submit failed: {submit.status_code} — {submit.text[:80]}")
+            return None
 
-    headers = {
-        "Authorization": f"Bearer {HF_TOKEN}",
-        "Accept": "image/png",
-        "Content-Type": "application/json",
-    }
+        job_id = submit.json()["id"]
+        print(f"[ImageGen] Job queued: {job_id}")
 
-    for model in models:
-        url = f"https://router.huggingface.co/hf-inference/models/{model}"
-        try:
-            print(f"[ImageGen] Trying HuggingFace: {model.split('/')[-1]}...")
-            resp = requests.post(
-                url,
-                headers=headers,
-                json={"inputs": prompt},
-                timeout=120,
-            )
-            if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("image"):
-                size_kb = len(resp.content) // 1024
-                print(f"[ImageGen] ✅ HuggingFace image! Size: {size_kb}KB (model: {model.split('/')[-1]})")
-                return resp.content
-            elif resp.status_code == 503:
-                print(f"[ImageGen] HF model loading (503), waiting 25s and retrying...")
-                time.sleep(25)
-                resp2 = requests.post(url, headers=headers, json={"inputs": prompt}, timeout=120)
-                if resp2.status_code == 200 and resp2.headers.get("content-type", "").startswith("image"):
-                    size_kb = len(resp2.content) // 1024
-                    print(f"[ImageGen] ✅ HuggingFace image after wait! Size: {size_kb}KB")
-                    return resp2.content
-                print(f"[ImageGen] HF still unavailable: {resp2.status_code}")
-            elif resp.status_code in [404, 410]:
-                print(f"[ImageGen] Model not available ({resp.status_code}), trying next...")
-            else:
-                print(f"[ImageGen] HF {model.split('/')[-1]}: {resp.status_code} — {resp.text[:80]}")
-        except Exception as e:
-            print(f"[ImageGen] HF error ({model.split('/')[-1]}): {e}")
+        # Poll every 10s, up to 5 minutes
+        for i in range(30):
+            time.sleep(10)
+            check = requests.get(
+                f"https://stablehorde.net/api/v2/generate/check/{job_id}",
+                headers={"apikey": HORDE_KEY},
+                timeout=15,
+            ).json()
+            wait = check.get("wait_time", "?")
+            done = check.get("done", False)
+            print(f"[ImageGen] Stable Horde: ~{wait}s remaining, done={done}")
+            if done:
+                break
+
+        result = requests.get(
+            f"https://stablehorde.net/api/v2/generate/status/{job_id}",
+            headers={"apikey": HORDE_KEY},
+            timeout=30,
+        ).json()
+
+        for gen in result.get("generations", []):
+            img_url = gen.get("img")
+            if img_url:
+                img_data = requests.get(img_url, timeout=30)
+                if img_data.status_code == 200:
+                    size_kb = len(img_data.content) // 1024
+                    print(f"[ImageGen] ✅ Stable Horde image! Size: {size_kb}KB")
+                    return img_data.content
+
+        print("[ImageGen] Stable Horde: no image in result")
+    except Exception as e:
+        print(f"[ImageGen] Stable Horde error: {e}")
 
     return None
 
@@ -212,8 +226,8 @@ def generate_image_bytes(post_data):
     print(f"[ImageGen] Generating image for: '{topic}'")
     print(f"[ImageGen] Prompt: {prompt[:120]}...")
 
-    # 1. HuggingFace — best quality, has token
-    img = _try_huggingface(prompt)
+    # 1. Stable Horde — free community GPU, HD quality
+    img = _try_stable_horde(prompt)
     if img:
         return img
 
