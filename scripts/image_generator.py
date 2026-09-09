@@ -131,14 +131,13 @@ def _try_huggingface(prompt):
         return None
     try:
         print("[ImageGen] Trying HuggingFace Inference API (FLUX.1-schnell)...")
-        url = "https://router.huggingface.co/hf-inference/v1/images/generations"
+        url = "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell"
         headers = {
             "Authorization": f"Bearer {HF_TOKEN}",
             "Content-Type": "application/json"
         }
         payload = {
-            "model": "black-forest-labs/FLUX.1-schnell",
-            "prompt": prompt,
+            "inputs": prompt,
             "parameters": {"width": 1200, "height": 630}
         }
         resp = requests.post(url, headers=headers, json=payload, timeout=60)
