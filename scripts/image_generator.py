@@ -94,7 +94,7 @@ def _try_stable_horde(prompt):
                 "prompt": prompt,
                 "params": {
                     "width": 704,
-                    "height": 396,
+                    "height": 384,
                     "steps": 20,
                     "n": 1,
                     "sampler_name": "k_euler_a",
