@@ -7,49 +7,60 @@ POLLINATIONS_URL = "https://image.pollinations.ai/prompt/{prompt}?width=1216&hei
 
 def create_image_prompt(post_data):
     """
-    Constructs ultra-clean, high-impact 3D visual prompts optimized for AI image generation.
-    Focuses on photorealistic, high-end 3D art without distorted text artifacts.
+    Constructs detailed, high-converting Before/After Infographic visual prompts
+    matching top-performing LinkedIn business case study graphics.
     """
-    topic = post_data.get("topic", post_data.get("repo", "Tech Innovation"))
+    topic = post_data.get("topic", post_data.get("repo", "Tech Automation"))
 
-    # Crisp, impressive 3D visual concepts tailored specifically to each topic
     topic_prompts = {
         "GHL (GoHighLevel)": (
-            "Professional 3D isometric mockup of an all-in-one digital marketing automation hub. "
-            "Glowing glass nodes connecting lead funnels, CRM dashboards, and automated messaging. "
-            "Dark blue and emerald green ambient lighting, cinematic studio render, 8k resolution, photorealistic, trending on Polycount."
+            "High-converting 2D business infographic comparison banner for LinkedIn. "
+            "Top banner title: 'FROM 40% NO-SHOWS TO 8% IN THREE WEEKS'. "
+            "Split screen: LEFT section labeled 'BEFORE' with red accent background showing high no-show appointment rate, broken calendar icons, and lost revenue. "
+            "RIGHT section labeled 'AFTER' with vibrant green accent background showing GoHighLevel automated SMS and email reminders, green calendar checkmarks, and 90% show-up rate. "
+            "Bottom bar text: 'THE FIX: AUTOMATED REMINDERS IN GOHIGHLEVEL'. Clean vector infographics, high contrast typography, flat modern design."
         ),
         "AI Automations": (
-            "Futuristic 3D concept art of artificial intelligence neural network processing data streams. "
-            "Translucent glowing cyan and purple glass nodes, sleek workflow automation pipelines, dark slate background, "
-            "Unreal Engine 5 render, ray tracing, octave render, hyper detailed."
+            "High-converting 2D business infographic comparison banner for LinkedIn. "
+            "Top headline: 'MANUAL DATA ENTRY VS 100% AI AUTOMATION WORKFLOW'. "
+            "Split visual design: LEFT side labeled 'MANUAL PROCESS (20 HOURS/WEEK)' showing slow manual copy-pasting and human error icons. "
+            "RIGHT side labeled 'AI AUTOMATED (INSTANT)' showing automated Python LLM pipeline, instant API webhooks, green checkmarks. "
+            "Bottom bar text: 'RESULT: 95% TIME SAVED WITH AI AGENTS'. Professional crisp vector graphic, clean typography."
         ),
         "CRMs & Sales Pipelines": (
-            "Modern 3D financial and sales CRM dashboard floating isometric cards. "
-            "Clean glassmorphism UI, glowing green growth analytics chart, sleek deal pipeline columns, "
-            "dark sleek backdrop, studio lighting, highly detailed 3D visualization."
+            "High-converting 2D business infographic visual for LinkedIn. "
+            "Top headline: 'LEAKY PIPELINE VS HIGH-CONVERTING AUTOMATED CRM'. "
+            "LEFT section: 'UNORGANIZED SPREADSHEETS' with red warning icons, forgotten leads, cold leads. "
+            "RIGHT section: 'AUTOMATED CRM PIPELINE' with green kanban deal stages (Prospect -> Demo -> Deal Won), instant notifications. "
+            "Bottom bar text: 'THE FIX: AUTOMATED CRM FOLLOW-UP TRIPPERS'. Clean modern corporate vector infographics."
         ),
         "High-Converting Funnels": (
-            "High-end 3D visual art of a glowing digital conversion funnel. "
-            "Streams of golden light particles entering a sleek translucent funnel and transforming into green success checkmarks. "
-            "Dark executive navy background, 3D render, luxury corporate tech aesthetic."
+            "High-converting 2D digital funnel comparison infographic banner for LinkedIn. "
+            "Top headline: 'LOW CONVERTING WEBSITE VS HIGH-CONVERTING FUNNEL'. "
+            "LEFT side: 'GENERIC WEBSITE (1% CONVERSION)' with distracting links, slow load time, lost visitors. "
+            "RIGHT side: 'HIGH-CONVERTING FUNNEL (12% CONVERSION)' with clear single CTA, sub-second speed, glowing green conversion graph. "
+            "Bottom bar text: 'THE FIX: OPTIMIZED 1-CLICK FUNNEL ARCHITECTURE'. Flat vector design, bold typography."
         ),
         "Full-Stack Development": (
-            "Sleek 3D developer workspace aesthetic. Holographic code structures floating over a futuristic glass desk setup, "
-            "ultrawide monitor with clean glowing syntax code, subtle dark neon lighting, sharp focus, 8k photorealistic architecture."
+            "High-converting 2D architecture comparison infographic banner for LinkedIn. "
+            "Top headline: 'MONOLITH BLOAT VS CLEAN FULL-STACK ARCHITECTURE'. "
+            "LEFT side: 'OVER-ENGINEERED MONOLITH' showing broken dependencies, high server costs, crash alerts. "
+            "RIGHT side: 'MODERN FULL-STACK (NEXT.JS + PYTHON REST API)' showing fast serverless deployments, sub-100ms response time, green uptime badge. "
+            "Bottom bar text: 'THE FIX: MINIMALIST SCALABLE STACK'. Modern vector graphic."
         ),
         "Robot Engineering & Hardware": (
-            "Close-up detailed 3D render of a futuristic precision robotic arm assembly. "
-            "Carbon fiber joint components, glowing micro-circuitry, industrial cybernetic design, "
-            "dramatic studio lighting, ultra-sharp detail, Octane Render."
+            "High-converting 2D engineering comparison infographic banner for LinkedIn. "
+            "Top headline: 'MANUAL ASSEMBLY VS AI VISION ROBOTIC AUTOMATION'. "
+            "LEFT side: 'MANUAL INSPECTION' showing high cycle times, human fatigue, defect risk. "
+            "RIGHT side: 'AI VISION ROBOTIC ARM' showing microsecond camera tracking, 99.9% precision, green quality badge. "
+            "Bottom bar text: 'THE FIX: EDGE COMPUTING & ROBOTIC VISION'. Crisp vector blueprint graphic."
         )
     }
 
-    # Fallback for any other topic
     fallback = (
-        f"Professional 3D isometric graphic representing '{topic}'. "
-        "Sleek glassmorphism visual elements, futuristic dark mode tech aesthetic, "
-        "vibrant glowing neon highlights, 8k resolution, cinematic lighting, ultra high quality."
+        f"High-converting 2D business infographic comparison banner for LinkedIn about '{topic}'. "
+        "Top headline, split comparison view with red Before side and green After side, "
+        "clean vector icons, high contrast text blocks, modern corporate visual design."
     )
 
     return topic_prompts.get(topic, fallback)
