@@ -49,3 +49,12 @@ jobs:
         run: |
           cd scripts
           python generate_post.py
+
+      - name: Commit posted topics state
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add scripts/posted_topics.json || true
+          git commit -m "chore: update posted topic state" || true
+          git push || true
+

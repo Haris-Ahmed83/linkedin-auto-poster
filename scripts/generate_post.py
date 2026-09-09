@@ -270,12 +270,12 @@ def build_trip_post(topic_item):
     
     return "\n".join(post_lines)
 
-STATE_FILE = "posted_topics.json"
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+STATE_FILE = os.path.join(SCRIPT_DIR, "posted_topics.json")
 
 def generate_post():
     today = datetime.now(timezone.utc)
     
-    # Load past indices to ensure every run produces a new topic
     posted_indices = []
     if os.path.exists(STATE_FILE):
         try:
@@ -284,10 +284,8 @@ def generate_post():
         except Exception:
             posted_indices = []
             
-    # Find available topic indices not used recently
     available = [i for i in range(len(CORE_TOPICS)) if i not in posted_indices]
     if not available:
-        # Reset once all 6 topics have been used
         posted_indices = []
         available = list(range(len(CORE_TOPICS)))
         
@@ -313,6 +311,7 @@ def generate_post():
     }
     
     return result_data
+
 
 
 def post_to_linkedin(result):
