@@ -1,7 +1,7 @@
 import base64
 import urllib.parse
 import requests
-from config import GEMINI_API_KEYS
+from config import GEMINI_API_KEYS, HF_TOKEN
 
 POLLINATIONS_URL = "https://image.pollinations.ai/prompt/{prompt}?width=1216&height=832&model=flux&nologo=true&enhance=true"
 
@@ -125,10 +125,37 @@ def _try_gemini_keys(prompt):
     return None
 
 
+def _try_huggingface(prompt):
+    """Generate high-quality HD image via HuggingFace Inference API using FLUX.1-schnell model."""
+    if not HF_TOKEN:
+        return None
+    try:
+        print("[ImageGen] Trying HuggingFace Inference API (FLUX.1-schnell)...")
+        url = "https://router.huggingface.co/hf-inference/v1/images/generations"
+        headers = {
+            "Authorization": f"Bearer {HF_TOKEN}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "model": "black-forest-labs/FLUX.1-schnell",
+            "prompt": prompt,
+            "parameters": {"width": 1200, "height": 630}
+        }
+        resp = requests.post(url, headers=headers, json=payload, timeout=60)
+        if resp.status_code == 200:
+            print(f"[ImageGen] ✅ HuggingFace FLUX image generated! Size: {len(resp.content)//1024}KB")
+            return resp.content
+        else:
+            print(f"[ImageGen] HuggingFace API returned status: {resp.status_code}")
+    except Exception as e:
+        print(f"[ImageGen] HuggingFace error: {e}")
+    return None
+
+
 def generate_image_bytes(post_data):
     """
     Generate image for a LinkedIn post.
-    Strategy: Try Gemini keys first, fallback to Pollinations.ai (free).
+    Strategy: Try Gemini keys first, then HuggingFace FLUX API, fallback to Pollinations.ai.
     Returns raw image bytes or None.
     """
     prompt = create_image_prompt(post_data)
@@ -140,7 +167,12 @@ def generate_image_bytes(post_data):
         if img:
             return img
 
-    # 2. Free fallback: Pollinations.ai
+    # 2. Try HuggingFace FLUX API (using user HF_TOKEN)
+    img = _try_huggingface(prompt)
+    if img:
+        return img
+
+    # 3. Free fallback: Pollinations.ai
     img = _try_pollinations(prompt)
     if img:
         return img

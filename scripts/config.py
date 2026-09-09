@@ -15,6 +15,8 @@ GEMINI_API_KEY_3 = os.getenv("GEMINI_API_KEY_3")
 GEMINI_API_KEY_4 = os.getenv("GEMINI_API_KEY_4")
 GEMINI_API_KEYS = [k for k in [GEMINI_API_KEY, GEMINI_API_KEY_2, GEMINI_API_KEY_3, GEMINI_API_KEY_4] if k]
 
+HF_TOKEN = os.getenv("HF_TOKEN")
+
 GH_TOKEN = os.getenv("GH_TOKEN")
 GH_USERNAME = "Haris-Ahmed83"
 
