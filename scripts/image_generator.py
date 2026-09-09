@@ -364,23 +364,13 @@ def generate_image_bytes(post_data):
 
 
 def _build_prompt(topic: str, text: str = "") -> str:
-    """Build a rich Gemini image generation prompt from topic and post text."""
-    # Extract hook line for context
-    hook = ""
-    for line in text.split("\n"):
-        line = line.strip()
-        if line and not line.startswith("#"):
-            hook = line[:120]
-            break
-
-    style = _pick_style(topic)
-    label = style["label"]
-
-    base = (
-        f"Professional LinkedIn post image about {label}. "
-        f"Photorealistic office or tech environment scene. "
-        f"The visual should relate to: {hook or topic}. "
-        "High-end corporate aesthetic, cinematic lighting, 4K quality. "
-        "No overlaid text, no words, clean composition."
+    """Build a rich Gemini image generation prompt using user's explicit prompt template."""
+    prompt = (
+        f"{text}\n\n"
+        "Main yeh post LinkedIn par post karne wala hoon. Mujhe ek professional, attractive image banake do "
+        "jo main iss post ke saath attach kar sako. Image high-class, modern photorealistic aur highly attractive ho "
+        "jo LinkedIn par engagement aur connections maximize kare. Visual scene cinematic lighting aur 4K quality mein ho. "
+        "No text overlay on the image."
     )
-    return base
+    return prompt
+
