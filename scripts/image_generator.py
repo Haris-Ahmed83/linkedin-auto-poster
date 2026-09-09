@@ -66,7 +66,7 @@ def _try_pollinations(prompt):
         encoded = urllib.parse.quote(prompt, safe="")
         url     = POLLINATIONS_URL.format(prompt=encoded)
         print(f"[ImageGen] Trying Pollinations.ai (free)...")
-        resp    = requests.get(url, timeout=60)
+        resp    = requests.get(url, timeout=40)
         if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("image"):
             print(f"[ImageGen] ✅ Pollinations image generated! Size: {len(resp.content)//1024}KB")
             return resp.content
