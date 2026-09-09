@@ -7,63 +7,71 @@ POLLINATIONS_URL = "https://image.pollinations.ai/prompt/{prompt}?width=1216&hei
 
 def create_image_prompt(post_data):
     """
-    Constructs detailed, high-converting Before/After Infographic visual prompts
-    matching top-performing LinkedIn business case study graphics.
+    Dynamically constructs a professional 4K image prompt strictly based on 
+    the post text content, topic, and key points.
     """
-    topic = post_data.get("topic", post_data.get("repo", "Tech Automation"))
+    topic = post_data.get("topic", post_data.get("repo", "Tech Innovation"))
+    text  = post_data.get("post", "")
 
-    topic_prompts = {
-        "GHL (GoHighLevel)": (
-            "High-converting 2D business infographic comparison banner for LinkedIn. "
-            "Top banner title: 'FROM 40% NO-SHOWS TO 8% IN THREE WEEKS'. "
-            "Split screen: LEFT section labeled 'BEFORE' with red accent background showing high no-show appointment rate, broken calendar icons, and lost revenue. "
-            "RIGHT section labeled 'AFTER' with vibrant green accent background showing GoHighLevel automated SMS and email reminders, green calendar checkmarks, and 90% show-up rate. "
-            "Bottom bar text: 'THE FIX: AUTOMATED REMINDERS IN GOHIGHLEVEL'. Clean vector infographics, high contrast typography, flat modern design."
-        ),
-        "AI Automations": (
-            "High-converting 2D business infographic comparison banner for LinkedIn. "
-            "Top headline: 'MANUAL DATA ENTRY VS 100% AI AUTOMATION WORKFLOW'. "
-            "Split visual design: LEFT side labeled 'MANUAL PROCESS (20 HOURS/WEEK)' showing slow manual copy-pasting and human error icons. "
-            "RIGHT side labeled 'AI AUTOMATED (INSTANT)' showing automated Python LLM pipeline, instant API webhooks, green checkmarks. "
-            "Bottom bar text: 'RESULT: 95% TIME SAVED WITH AI AGENTS'. Professional crisp vector graphic, clean typography."
-        ),
-        "CRMs & Sales Pipelines": (
-            "High-converting 2D business infographic visual for LinkedIn. "
-            "Top headline: 'LEAKY PIPELINE VS HIGH-CONVERTING AUTOMATED CRM'. "
-            "LEFT section: 'UNORGANIZED SPREADSHEETS' with red warning icons, forgotten leads, cold leads. "
-            "RIGHT section: 'AUTOMATED CRM PIPELINE' with green kanban deal stages (Prospect -> Demo -> Deal Won), instant notifications. "
-            "Bottom bar text: 'THE FIX: AUTOMATED CRM FOLLOW-UP TRIPPERS'. Clean modern corporate vector infographics."
-        ),
-        "High-Converting Funnels": (
-            "High-converting 2D digital funnel comparison infographic banner for LinkedIn. "
-            "Top headline: 'LOW CONVERTING WEBSITE VS HIGH-CONVERTING FUNNEL'. "
-            "LEFT side: 'GENERIC WEBSITE (1% CONVERSION)' with distracting links, slow load time, lost visitors. "
-            "RIGHT side: 'HIGH-CONVERTING FUNNEL (12% CONVERSION)' with clear single CTA, sub-second speed, glowing green conversion graph. "
-            "Bottom bar text: 'THE FIX: OPTIMIZED 1-CLICK FUNNEL ARCHITECTURE'. Flat vector design, bold typography."
-        ),
-        "Full-Stack Development": (
-            "High-converting 2D architecture comparison infographic banner for LinkedIn. "
-            "Top headline: 'MONOLITH BLOAT VS CLEAN FULL-STACK ARCHITECTURE'. "
-            "LEFT side: 'OVER-ENGINEERED MONOLITH' showing broken dependencies, high server costs, crash alerts. "
-            "RIGHT side: 'MODERN FULL-STACK (NEXT.JS + PYTHON REST API)' showing fast serverless deployments, sub-100ms response time, green uptime badge. "
-            "Bottom bar text: 'THE FIX: MINIMALIST SCALABLE STACK'. Modern vector graphic."
-        ),
-        "Robot Engineering & Hardware": (
-            "High-converting 2D engineering comparison infographic banner for LinkedIn. "
-            "Top headline: 'MANUAL ASSEMBLY VS AI VISION ROBOTIC AUTOMATION'. "
-            "LEFT side: 'MANUAL INSPECTION' showing high cycle times, human fatigue, defect risk. "
-            "RIGHT side: 'AI VISION ROBOTIC ARM' showing microsecond camera tracking, 99.9% precision, green quality badge. "
-            "Bottom bar text: 'THE FIX: EDGE COMPUTING & ROBOTIC VISION'. Crisp vector blueprint graphic."
+    # Extract non-empty lines excluding hashtags
+    lines = [l.strip() for l in text.split("\n") if l.strip() and not l.startswith("#")]
+    hook  = lines[0] if lines else topic
+    
+    # Extract breakdown points from post text
+    points = [l for l in lines if l.startswith(("1.", "2.", "3.", "-", "•", "👉"))]
+    points_summary = " ".join(points[:3]) if points else " ".join(lines[1:4])[:200]
+
+    # Map visual style dynamically based on post context & topic
+    if "ghl" in topic.lower() or "gohighlevel" in text.lower():
+        prompt = (
+            f"Ultra-professional 4K LinkedIn infographic for GoHighLevel (GHL) automation. "
+            f"Main Concept: {hook}. Key Points: {points_summary}. "
+            f"Visual elements: Clean corporate vector infographic, high-contrast dashboard metrics, "
+            f"glowing green conversion badges, dark blue and slate accents, crisp executive typography, photorealistic 8k studio render."
         )
-    }
+    elif "ai" in topic.lower() or "automation" in text.lower():
+        prompt = (
+            f"Sleek professional 4K tech graphic about AI Automations. "
+            f"Topic Context: {hook}. Core Details: {points_summary}. "
+            f"Visual elements: Futuristic glowing neural nodes, clean workflow automation flowchart, "
+            f"dark slate background with vibrant cyan and emerald lighting, high quality 3D glassmorphic SaaS illustration."
+        )
+    elif "crm" in topic.lower() or "pipeline" in text.lower() or "sales" in text.lower():
+        prompt = (
+            f"Professional 4K sales analytics graphic for LinkedIn. "
+            f"Headline Concept: {hook}. Focus: {points_summary}. "
+            f"Visual elements: Modern CRM deal pipeline cards, green revenue growth charts, "
+            f"sleek analytics dashboard UI, dark executive slate aesthetic, ultra sharp 4K render."
+        )
+    elif "funnel" in topic.lower() or "conversion" in text.lower():
+        prompt = (
+            f"High-impact 4K marketing funnel visual graphic for LinkedIn. "
+            f"Main Theme: {hook}. Highlights: {points_summary}. "
+            f"Visual elements: Glowing digital conversion funnel, golden light streams, high-converting landing page UI mockup, "
+            f"luxury corporate dark navy background, clean vector graphics."
+        )
+    elif "full-stack" in topic.lower() or "dev" in topic.lower() or "stack" in text.lower():
+        prompt = (
+            f"Professional 4K developer tech architecture banner for LinkedIn. "
+            f"Main Topic: {hook}. Tech Stack: {points_summary}. "
+            f"Visual elements: Ultra-clean full-stack architecture diagram, modern dark IDE syntax window, "
+            f"minimalist developer workspace setup, glowing cyan and violet lighting, crisp 8k render."
+        )
+    elif "robot" in topic.lower() or "hardware" in topic.lower():
+        prompt = (
+            f"High-tech 4K engineering graphic for LinkedIn. "
+            f"Core Topic: {hook}. Hardware Specs: {points_summary}. "
+            f"Visual elements: Detailed 3D robotic arm vision assembly, glowing micro-circuitry blueprints, "
+            f"dramatic studio lighting, ultra-sharp cybernetic engineering art."
+        )
+    else:
+        prompt = (
+            f"Ultra-professional 4K corporate tech graphic for LinkedIn about '{topic}'. "
+            f"Main Headline: {hook}. Context: {points_summary}. "
+            f"Visual style: High contrast vector infographic, dark mode SaaS design, glowing green accents, 8k resolution, crisp photorealistic quality."
+        )
 
-    fallback = (
-        f"High-converting 2D business infographic comparison banner for LinkedIn about '{topic}'. "
-        "Top headline, split comparison view with red Before side and green After side, "
-        "clean vector icons, high contrast text blocks, modern corporate visual design."
-    )
-
-    return topic_prompts.get(topic, fallback)
+    return prompt
 
 
 def _try_pollinations(prompt):
