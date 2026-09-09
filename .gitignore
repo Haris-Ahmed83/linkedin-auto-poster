@@ -4,3 +4,8 @@ linkdin Profile.pdf
 __pycache__/
 .env
 *.egg-info/
+# local scratch/test files
+linkedin_token.js
+post_ghl.js
+*.png
+todays_progress_summary.md
