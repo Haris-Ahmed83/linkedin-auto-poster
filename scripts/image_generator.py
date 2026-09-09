@@ -364,13 +364,12 @@ def generate_image_bytes(post_data):
 
 
 def _build_prompt(topic: str, text: str = "") -> str:
-    """Build a rich Gemini image generation prompt using user's explicit prompt template."""
+    """Build a rich Gemini image generation prompt using user's exact literal wording."""
     prompt = (
         f"{text}\n\n"
-        "Main yeh post LinkedIn par post karne wala hoon. Mujhe ek professional, attractive image banake do "
-        "jo main iss post ke saath attach kar sako. Image high-class, modern photorealistic aur highly attractive ho "
-        "jo LinkedIn par engagement aur connections maximize kare. Visual scene cinematic lighting aur 4K quality mein ho. "
-        "No text overlay on the image."
+        "ma yh post linkdin pa post karna wala ho muja ek professional Atttractive is k lea image bana k do jo ma post kar sako "
+        "is text k sat images high class or attractive ho ma linkdin account pa connection zada karna chata ho is lea agr tuma muj sa kuch to poch lana"
     )
     return prompt
+
 
