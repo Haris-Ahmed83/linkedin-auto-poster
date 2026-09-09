@@ -41,6 +41,7 @@ jobs:
           LINKEDIN_USER_URN: ${{ secrets.LINKEDIN_USER_URN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_API_KEY_2: ${{ secrets.GEMINI_API_KEY_2 }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
         run: |
           cd scripts
           python generate_post.py

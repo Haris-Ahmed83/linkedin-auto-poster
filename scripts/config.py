@@ -27,6 +27,6 @@ POSTING_TIMES_PKT = {
 }
 
 COOLDOWN_DAYS = 7
-DRY_RUN = False  # Live posting enabled
+DRY_RUN = os.getenv("DRY_RUN", "false").lower() == "true"
 MAX_POST_LENGTH = 3000
 MIN_POST_LENGTH = 1200
