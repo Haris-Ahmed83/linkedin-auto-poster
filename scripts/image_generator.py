@@ -1,154 +1,252 @@
 import base64
+import io
 import time
+import textwrap
 import urllib.parse
+import urllib.request
 import requests
 from config import GEMINI_API_KEYS, HF_TOKEN
 
 
-def create_image_prompt(post_data):
-    """
-    Dynamically constructs professional text-free 4K visual prompts
-    tailored to the post topic and context.
-    """
-    topic = post_data.get("topic", post_data.get("repo", "Tech Innovation"))
-    text  = post_data.get("post", "")
+# ─────────────────────────────────────────────────────────────
+#  Topic → visual style map
+# ─────────────────────────────────────────────────────────────
+TOPIC_STYLES = {
+    "ghl": {
+        "bg_top":   (8, 20, 35),
+        "bg_bot":   (5, 45, 25),
+        "accent":   (0, 220, 100),
+        "bar":      (0, 180, 80),
+        "label":    "GO HIGH LEVEL",
+        "icon":     "⚡",
+    },
+    "ai": {
+        "bg_top":   (10, 5, 30),
+        "bg_bot":   (20, 10, 60),
+        "accent":   (139, 92, 246),
+        "bar":      (99, 60, 220),
+        "label":    "AI AUTOMATIONS",
+        "icon":     "🤖",
+    },
+    "crm": {
+        "bg_top":   (5, 18, 40),
+        "bg_bot":   (5, 35, 25),
+        "accent":   (34, 197, 94),
+        "bar":      (16, 160, 70),
+        "label":    "CRM & SALES",
+        "icon":     "📈",
+    },
+    "funnel": {
+        "bg_top":   (20, 10, 5),
+        "bg_bot":   (40, 20, 5),
+        "accent":   (251, 191, 36),
+        "bar":      (200, 150, 20),
+        "label":    "FUNNELS",
+        "icon":     "🎯",
+    },
+    "full": {
+        "bg_top":   (5, 10, 30),
+        "bg_bot":   (15, 5, 40),
+        "accent":   (56, 189, 248),
+        "bar":      (30, 140, 200),
+        "label":    "FULL-STACK DEV",
+        "icon":     "💻",
+    },
+    "robot": {
+        "bg_top":   (10, 10, 10),
+        "bg_bot":   (5, 25, 35),
+        "accent":   (249, 115, 22),
+        "bar":      (200, 80, 10),
+        "label":    "ROBOTICS",
+        "icon":     "🦾",
+    },
+}
 
-    no_text = (
-        ", no text, no words, no letters, no captions, "
-        "clean professional graphic, ultra-sharp 4K resolution, "
-        "cinematic lighting, hyperrealistic studio render"
+
+def _pick_style(topic: str) -> dict:
+    t = topic.lower()
+    if "ghl" in t or "gohigh" in t:
+        return TOPIC_STYLES["ghl"]
+    if "ai" in t or "automat" in t:
+        return TOPIC_STYLES["ai"]
+    if "crm" in t or "sales" in t or "pipeline" in t:
+        return TOPIC_STYLES["crm"]
+    if "funnel" in t or "convers" in t:
+        return TOPIC_STYLES["funnel"]
+    if "full" in t or "stack" in t:
+        return TOPIC_STYLES["full"]
+    if "robot" in t or "hardware" in t:
+        return TOPIC_STYLES["robot"]
+    return TOPIC_STYLES["ai"]   # default
+
+
+def _get_font(url: str, size: int):
+    """Download a TTF font and return a PIL ImageFont, fall back to default."""
+    try:
+        from PIL import ImageFont
+        data = urllib.request.urlopen(url, timeout=10).read()
+        return ImageFont.truetype(io.BytesIO(data), size)
+    except Exception:
+        from PIL import ImageFont
+        try:
+            return ImageFont.load_default(size=size)
+        except TypeError:
+            return ImageFont.load_default()
+
+
+# ─────────────────────────────────────────────────────────────
+#  Primary: Pillow HD card generator
+# ─────────────────────────────────────────────────────────────
+def _try_pillow_card(post_data: dict) -> bytes | None:
+    """
+    Generates a premium 1200×627 dark-mode text-card image using Pillow.
+    No API calls required — instant, always works, always HD.
+    """
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+    except ImportError:
+        print("[ImageGen] Pillow not installed, skipping card generator.")
+        return None
+
+    topic = post_data.get("topic", post_data.get("repo", "Technology"))
+    text  = post_data.get("post", post_data.get("text", ""))
+
+    # ── Pick the hook line (first non-empty line) ──────────────
+    hook = ""
+    for line in text.split("\n"):
+        line = line.strip()
+        if line and not line.startswith("#"):
+            hook = line
+            break
+    if not hook:
+        hook = topic
+
+    # ── Strip emoji from hook for cleaner card rendering ──────
+    import re
+    hook_clean = re.sub(r'[^\x00-\x7F]+', '', hook).strip(" :-.")
+    if len(hook_clean) < 8:
+        hook_clean = hook  # keep original if stripping removes too much
+
+    style  = _pick_style(topic)
+    W, H   = 1200, 627
+
+    # ── Canvas + vertical gradient ─────────────────────────────
+    img  = Image.new("RGB", (W, H), style["bg_top"])
+    draw = ImageDraw.Draw(img, "RGBA")
+
+    for y in range(H):
+        r_ratio = y / H
+        r = int(style["bg_top"][0] + (style["bg_bot"][0] - style["bg_top"][0]) * r_ratio)
+        g = int(style["bg_top"][1] + (style["bg_bot"][1] - style["bg_top"][1]) * r_ratio)
+        b = int(style["bg_top"][2] + (style["bg_bot"][2] - style["bg_top"][2]) * r_ratio)
+        draw.line([(0, y), (W, y)], fill=(r, g, b))
+
+    # ── Glassmorphism card ─────────────────────────────────────
+    card_x1, card_y1, card_x2, card_y2 = 60, 60, W - 60, H - 60
+    glass_overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    glass_draw    = ImageDraw.Draw(glass_overlay)
+    glass_draw.rounded_rectangle(
+        [card_x1, card_y1, card_x2, card_y2],
+        radius=24,
+        fill=(255, 255, 255, 12),
+        outline=(*style["accent"], 60),
+        width=1,
+    )
+    img.paste(Image.alpha_composite(Image.new("RGBA", (W, H), (0, 0, 0, 0)), glass_overlay), mask=glass_overlay.split()[3])
+
+    # ── Accent top bar ─────────────────────────────────────────
+    bar_y = card_y1 + 2
+    draw.rounded_rectangle(
+        [card_x1 + 2, bar_y, card_x1 + 2 + 200, bar_y + 5],
+        radius=3,
+        fill=style["bar"],
     )
 
-    if "ghl" in topic.lower() or "gohighlevel" in topic.lower():
-        prompt = (
-            "Professional 3D glassmorphism marketing automation dashboard, "
-            "glowing emerald green CRM workflow nodes connected by light streams, "
-            "dark matte slate background, modern SaaS product aesthetic, "
-            "depth of field bokeh, octane render"
-            + no_text
+    # ── Decorative circles (background depth) ─────────────────
+    for cx, cy, cr, alpha in [
+        (W - 120, 100, 200, 18),
+        (150, H - 100, 150, 12),
+        (W // 2, H // 2, 80, 8),
+    ]:
+        circle_overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        circle_draw    = ImageDraw.Draw(circle_overlay)
+        circle_draw.ellipse(
+            [cx - cr, cy - cr, cx + cr, cy + cr],
+            fill=(*style["accent"], alpha),
         )
-    elif "ai" in topic.lower() or "automation" in topic.lower():
-        prompt = (
-            "Futuristic 3D artificial intelligence neural network visualization, "
-            "glowing cyan data nodes, holographic pipeline architecture, "
-            "dark deep-space background, hyper-detailed octane render, "
-            "blue and purple luminous accents"
-            + no_text
-        )
-    elif "crm" in topic.lower() or "sales" in topic.lower() or "pipeline" in text.lower():
-        prompt = (
-            "Sleek 3D sales pipeline CRM dashboard visualization, "
-            "glowing green funnel stages, animated deal progression bars, "
-            "dark navy corporate background, premium SaaS UI aesthetic, "
-            "professional business technology render"
-            + no_text
-        )
-    elif "funnel" in topic.lower() or "conversion" in topic.lower():
-        prompt = (
-            "High-end 3D digital marketing funnel visualization, "
-            "glowing golden light particles flowing downward, "
-            "dark luxury navy corporate background, "
-            "conversion optimization concept art, premium tech aesthetic"
-            + no_text
-        )
-    elif "full-stack" in topic.lower() or "full stack" in topic.lower():
-        prompt = (
-            "Sleek ultrawide developer workspace 3D render, "
-            "multiple monitors displaying glowing code architecture diagrams, "
-            "ambient violet and blue neon lighting, "
-            "premium mechanical keyboard, coffee mug, sharp focus depth of field"
-            + no_text
-        )
-    elif "robot" in topic.lower() or "hardware" in topic.lower():
-        prompt = (
-            "Highly detailed 3D render of a futuristic robotic arm with carbon fibre joints, "
-            "glowing micro-circuitry, dramatic studio lighting, "
-            "AI vision sensor integration, industrial engineering aesthetic"
-            + no_text
-        )
-    else:
-        prompt = (
-            f"Professional 3D isometric tech graphic for '{topic}', "
-            "sleek glassmorphism elements, dark slate background, "
-            "glowing green and cyan accents, premium corporate aesthetic"
-            + no_text
-        )
+        img.paste(Image.alpha_composite(Image.new("RGBA", (W, H), (0, 0, 0, 0)), circle_overlay), mask=circle_overlay.split()[3])
 
-    return prompt
+    # ── Fonts ──────────────────────────────────────────────────
+    INTER_BOLD = "https://github.com/google/fonts/raw/main/ofl/inter/static/Inter-Bold.ttf"
+    INTER_REG  = "https://github.com/google/fonts/raw/main/ofl/inter/static/Inter-Regular.ttf"
+    INTER_MED  = "https://github.com/google/fonts/raw/main/ofl/inter/static/Inter-Medium.ttf"
 
+    font_label  = _get_font(INTER_MED, 22)
+    font_hook   = _get_font(INTER_BOLD, 62)
+    font_sub    = _get_font(INTER_REG, 28)
+    font_brand  = _get_font(INTER_MED, 24)
 
-def _try_stable_horde(prompt):
-    """
-    Free HD image via Stable Horde — community GPU pool.
-    Anonymous key works with no registration. Produces proper 1024x576 images.
-    May take 2-5 minutes; fine for automated daily posting.
-    """
-    HORDE_KEY = "0000000000"  # anonymous free key; stablehorde.net/register for faster
+    # ── Label (topic pill) ─────────────────────────────────────
+    label_text = style["label"]
+    label_x, label_y = card_x1 + 40, card_y1 + 34
+    lw = draw.textlength(label_text, font=font_label) if hasattr(draw, 'textlength') else 140
+    pill_pad = 14
+    draw.rounded_rectangle(
+        [label_x - pill_pad, label_y - 6, label_x + lw + pill_pad, label_y + 30],
+        radius=20,
+        fill=(*style["accent"], 30),
+        outline=(*style["accent"], 120),
+        width=1,
+    )
+    draw.text((label_x, label_y), label_text, font=font_label, fill=(*style["accent"], 230))
 
-    print("[ImageGen] Submitting to Stable Horde (free community GPU)...")
-    try:
-        submit = requests.post(
-            "https://stablehorde.net/api/v2/generate/async",
-            headers={"apikey": HORDE_KEY, "Content-Type": "application/json"},
-            json={
-                "prompt": prompt,
-                "params": {
-                    "width": 704,
-                    "height": 384,
-                    "steps": 20,
-                    "n": 1,
-                    "sampler_name": "k_euler_a",
-                    "cfg_scale": 7.0,
-                },
-                "models": ["Dreamshaper", "stable_diffusion_xl", "Stable Diffusion XL 1.0"],
-                "r2": True,
-                "nsfw": False,
-            },
-            timeout=30,
-        )
-        if submit.status_code != 202:
-            print(f"[ImageGen] Stable Horde submit failed: {submit.status_code} — {submit.text[:80]}")
-            return None
+    # ── Hook text (auto-wrapped) ───────────────────────────────
+    max_chars = 38
+    lines = textwrap.wrap(hook_clean, width=max_chars)[:3]  # max 3 lines
+    hook_y = card_y1 + 110
+    line_h = 80
+    for line in lines:
+        draw.text((card_x1 + 40, hook_y), line, font=font_hook, fill=(245, 248, 255))
+        hook_y += line_h
 
-        job_id = submit.json()["id"]
-        print(f"[ImageGen] Job queued: {job_id}")
+    # ── Accent divider ─────────────────────────────────────────
+    div_y = hook_y + 20
+    draw.line([(card_x1 + 40, div_y), (card_x1 + 240, div_y)], fill=style["accent"], width=3)
 
-        # Poll every 10s, up to 5 minutes
-        for i in range(30):
-            time.sleep(10)
-            check = requests.get(
-                f"https://stablehorde.net/api/v2/generate/check/{job_id}",
-                headers={"apikey": HORDE_KEY},
-                timeout=15,
-            ).json()
-            wait = check.get("wait_time", "?")
-            done = check.get("done", False)
-            print(f"[ImageGen] Stable Horde: ~{wait}s remaining, done={done}")
-            if done:
-                break
+    # ── Sub-label ─────────────────────────────────────────────
+    draw.text(
+        (card_x1 + 40, div_y + 20),
+        "Insight for Builders & Operators",
+        font=font_sub,
+        fill=(180, 190, 210),
+    )
 
-        result = requests.get(
-            f"https://stablehorde.net/api/v2/generate/status/{job_id}",
-            headers={"apikey": HORDE_KEY},
-            timeout=30,
-        ).json()
+    # ── Author branding bottom-right ───────────────────────────
+    brand = "Haris Ahmed  •  linkedin.com"
+    brand_w = draw.textlength(brand, font=font_brand) if hasattr(draw, 'textlength') else 240
+    draw.text(
+        (card_x2 - brand_w - 20, card_y2 - 38),
+        brand,
+        font=font_brand,
+        fill=(140, 160, 190),
+    )
 
-        for gen in result.get("generations", []):
-            img_url = gen.get("img")
-            if img_url:
-                img_data = requests.get(img_url, timeout=30)
-                if img_data.status_code == 200:
-                    size_kb = len(img_data.content) // 1024
-                    print(f"[ImageGen] ✅ Stable Horde image! Size: {size_kb}KB")
-                    return img_data.content
+    # ── Accent dot cluster bottom-right ───────────────────────
+    for i in range(3):
+        dot_x = card_x2 - 60 - i * 20
+        draw.ellipse([dot_x, card_y1 + 30, dot_x + 8, card_y1 + 38], fill=(*style["accent"], 160 - i * 40))
 
-        print("[ImageGen] Stable Horde: no image in result")
-    except Exception as e:
-        print(f"[ImageGen] Stable Horde error: {e}")
-
-    return None
+    # ── Render to bytes ───────────────────────────────────────
+    buf = io.BytesIO()
+    img.convert("RGB").save(buf, format="JPEG", quality=95, optimize=True)
+    size_kb = buf.tell() // 1024
+    print(f"[ImageGen] ✅ Pillow card generated! Size: {size_kb}KB (1200×627, {topic})")
+    return buf.getvalue()
 
 
+# ─────────────────────────────────────────────────────────────
+#  Fallback 1: Gemini API keys
+# ─────────────────────────────────────────────────────────────
 def _try_gemini_keys(prompt):
     """Try all configured Gemini keys for image generation, skip on 429."""
     for api_key in GEMINI_API_KEYS:
@@ -194,8 +292,11 @@ def _try_gemini_keys(prompt):
     return None
 
 
+# ─────────────────────────────────────────────────────────────
+#  Fallback 2: Pollinations
+# ─────────────────────────────────────────────────────────────
 def _try_pollinations(prompt):
-    """Fallback: Pollinations.ai free image generation."""
+    """Last-resort fallback: Pollinations.ai free image generation."""
     encoded = urllib.parse.quote(prompt, safe="")
     seed    = int(time.time()) % 99999
     urls = [
@@ -209,37 +310,50 @@ def _try_pollinations(prompt):
             if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("image"):
                 size_kb = len(resp.content) // 1024
                 print(f"[ImageGen] Pollinations returned {size_kb}KB")
-                return resp.content  # take whatever size, it's the last fallback
+                return resp.content
         except Exception as e:
             print(f"[ImageGen] Pollinations error: {e}")
     return None
 
 
+# ─────────────────────────────────────────────────────────────
+#  Public entry point
+# ─────────────────────────────────────────────────────────────
 def generate_image_bytes(post_data):
     """
     Generate a professional HD image for a LinkedIn post.
-    Priority: HuggingFace (HD, has token) → Gemini → Pollinations (fallback).
-    Returns raw image bytes or None.
+    Priority:
+      1. Pillow HD card  — instant, no API, always 1200×627
+      2. Gemini          — if API key has image access
+      3. Pollinations    — last resort
     """
-    prompt = create_image_prompt(post_data)
-    topic  = post_data.get("topic", post_data.get("repo", "post"))
+    topic = post_data.get("topic", post_data.get("repo", "post"))
     print(f"[ImageGen] Generating image for: '{topic}'")
-    print(f"[ImageGen] Prompt: {prompt[:120]}...")
 
-    # 1. Stable Horde — free community GPU, HD quality
-    img = _try_stable_horde(prompt)
+    # 1. Pillow card — primary, always works
+    img = _try_pillow_card(post_data)
     if img:
         return img
 
-    # 2. Gemini — usually rate-limited on free tier
+    # 2. Gemini
+    from image_generator import _build_prompt
+    prompt = _build_prompt(topic)
     img = _try_gemini_keys(prompt)
     if img:
         return img
 
-    # 3. Pollinations — free fallback, smaller images
+    # 3. Pollinations
     img = _try_pollinations(prompt)
     if img:
         return img
 
     print("[ImageGen] ❌ All image providers failed — post will go text-only.")
     return None
+
+
+def _build_prompt(topic: str) -> str:
+    """Minimal prompt builder for API fallbacks."""
+    return (
+        f"Professional 4K cinematic photograph for a LinkedIn post about '{topic}', "
+        "dark background, high-end corporate aesthetic, no text, no words"
+    )
