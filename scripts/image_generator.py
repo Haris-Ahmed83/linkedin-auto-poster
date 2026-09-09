@@ -7,42 +7,69 @@ POLLINATIONS_URL = "https://image.pollinations.ai/prompt/{prompt}?width=1216&hei
 
 def create_image_prompt(post_data):
     """
-    Constructs an optimized visual prompt based on post context.
+    Constructs an ultra-specific, high-converting visual prompt based on the post content.
+    Ensures the image visually depicts the exact topic, code, or architecture discussed.
     """
-    repo     = post_data.get("repo", "Software Project")
-    template = post_data.get("template", "tech")
+    topic    = post_data.get("topic", post_data.get("repo", "Tech Innovation"))
+    template = post_data.get("template", "trip")
     text     = post_data.get("post", "")
 
-    lines          = [l.strip() for l in text.split("\n") if l.strip() and not l.startswith("#")]
-    context_snippet = " ".join(lines[:3])[:200]
+    # Extract key statements and hook from post text
+    lines = [l.strip() for l in text.split("\n") if l.strip() and not l.startswith("#")]
+    hook_line = lines[0] if lines else topic
+    summary_snippet = " ".join(lines[1:4])[:220]
 
-    template_styles = {
-        "how_i_built":       "developer workspace, code on screen, building something",
-        "hot_take":          "bold statement, tech debate, futuristic contrast",
-        "lesson_learned":    "journey, growth, lessons, turning point",
-        "data_numbers":      "data visualization, charts, analytics dashboard",
-        "progress_journey":  "progress bar, milestone, journey forward",
-        "news":              "breaking tech news, AI, innovation, digital world",
+    # Specialized visual mapping per core topic
+    topic_visuals = {
+        "GHL (GoHighLevel)": (
+            "Split visual dashboard comparison for GoHighLevel GHL marketing automation: "
+            "Left side: cluttered screen with broken integration red icons (Zapier, Mailchimp, Calendly). "
+            "Right side: glowing green unified futuristic CRM workflow hub showing lead conversion funnels and auto-booking. "
+            "Text overlay in elegant bold typography: 'GO HIGH LEVEL: ONE UNIFIED AUTOMATION STACK'."
+        ),
+        "AI Automations": (
+            "Futuristic AI automation blueprint diagram: glowing neon nodes connecting LLM APIs, webhooks, auto-responders, and autonomous AI agents. "
+            "Dark cyberpunk office setup with translucent glass screens showing python automation code and live data pipelines. "
+            "Bold headline visual: 'AUTONOMOUS AI WORKFLOWS IN ACTION'."
+        ),
+        "CRMs & Sales Pipelines": (
+            "Sleek modern CRM sales pipeline analytics matrix. Vibrant kanban columns moving leads automatically from Prospect to Closed Won. "
+            "3D rendered floating glowing glass cards showing lead scoring, automated deal stage triggers, and revenue growth charts. "
+            "Clean tech aesthetic with dark slate background and bright emerald-cyan lighting."
+        ),
+        "High-Converting Funnels": (
+            "3D holographic funnel structure visualization: top wide section receiving organic multi-channel traffic, "
+            "middle section processing automated lead lead magnet nurture sequences, bottom glowing spout outputting qualified sales bookings. "
+            "Vibrant gradient lines, modern SaaS landing page UI elements hovering around the funnel."
+        ),
+        "Full-Stack Development": (
+            "Modern full-stack developer workspace setup: high-end vertical monitors showing clean backend API code (Node.js/Python), "
+            "frontend React/Next.js UI preview, database schema diagrams, and terminal logs. "
+            "Atmospheric dark-mode room with subtle ambient neon lighting and glowing tech badges."
+        ),
+        "Robot Engineering & Hardware": (
+            "High-tech robotics engineering studio: advanced robotic arm assembly integrated with microcontrollers, AI vision sensors, and circuit boards. "
+            "Detailed CAD wireframe blueprint overlay combined with real hardware components, showing precision mechanical engineering and ROS code."
+        ),
     }
-    style_hint = template_styles.get(template, "tech innovation")
 
-    # Special case for GHL
-    if "ghl" in repo.lower() or "gohighlevel" in text.lower() or "GoHighLevel" in text:
-        return (
-            "Ultra-professional dark-mode LinkedIn banner about GoHighLevel GHL marketing automation. "
-            "Split design: LEFT side shows chaos with multiple disconnected app icons floating in red-orange tones, "
-            "RIGHT side shows a single clean unified CRM dashboard in glowing emerald green neon. "
-            "Bold white headline: ONE PLATFORM ZERO CHAOS. "
-            "Dark background, indigo and emerald neon glow accents, futuristic premium SaaS aesthetic, "
-            "4K ultra sharp, no text watermarks, professional agency visual."
+    specific_visual = topic_visuals.get(topic)
+
+    if specific_visual:
+        prompt = (
+            f"Ultra-professional dark-mode LinkedIn post banner image. {specific_visual} "
+            f"Context: {summary_snippet}. "
+            f"Style: Premium 4K resolution, sleek modern lighting, dark slate and neon accents, "
+            f"no watermarks, photorealistic detail, highly engaging social media graphic."
+        )
+    else:
+        prompt = (
+            f"Sleek professional dark-mode LinkedIn graphic about '{topic}'. "
+            f"Visual representation: {hook_line}. Context: {summary_snippet}. "
+            f"Style: Dark tech aesthetic, vibrant indigo/cyan neon highlights, modern 3D glassmorphic UI elements, "
+            f"ultra sharp 4K quality, no text watermarks, professional SaaS visual."
         )
 
-    prompt = (
-        f"Sleek professional dark-mode tech LinkedIn post banner about '{repo}'. "
-        f"Theme: {style_hint}. Context: {context_snippet}. "
-        f"Style: dark futuristic background, vibrant indigo and emerald neon glow, "
-        f"minimalist developer aesthetic, ultra sharp 4K, no watermarks, premium quality."
-    )
     return prompt
 
 

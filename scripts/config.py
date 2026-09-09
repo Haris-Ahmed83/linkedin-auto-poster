@@ -20,12 +20,12 @@ GH_USERNAME = "Haris-Ahmed83"
 
 POSTING_DAYS = [0, 1, 2, 3, 4, 5]  # Mon=0 .. Sat=5 (skip Sunday=6)
 POSTING_TIMES_PKT = {
-    0: "08:30",  # Mon 8:30 AM PKT
-    1: "08:30",  # Tue 8:30 AM PKT
-    2: "15:00",  # Wed 3:00 PM PKT (UK + US reach)
-    3: "08:30",  # Thu 8:30 AM PKT
-    4: "08:30",  # Fri 8:30 AM PKT
-    5: "10:00",  # Sat 10:00 AM PKT (weekend, later time)
+    0: "09:00",  # Mon 9:00 AM PKT
+    1: "10:00",  # Tue 10:00 AM PKT
+    2: "09:00",  # Wed 9:00 AM PKT
+    3: "10:00",  # Thu 10:00 AM PKT
+    4: "09:00",  # Fri 9:00 AM PKT
+    5: "10:00",  # Sat 10:00 AM PKT
 }
 
 COOLDOWN_DAYS = 7

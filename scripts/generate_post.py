@@ -167,113 +167,125 @@ def build_post_progress_journey(repo_name, description, details):
     
     return "\n".join(body_parts)
 
-BUILDERS = {
-    "how_i_built": build_post_how_i_built,
-    "hot_take": build_post_hot_take,
-    "lesson_learned": build_post_lesson_learned,
-    "data_numbers": build_post_data_numbers,
-    "progress_journey": build_post_progress_journey,
-}
+# Target topics for daily posting
+CORE_TOPICS = [
+    {
+        "name": "GHL (GoHighLevel)",
+        "tag": "#GoHighLevel #GHL #MarketingAutomation #SaaS",
+        "trigger": "Most business owners waste 20+ hours a week switching between 7 different subscriptions.",
+        "reveal": "We consolidated our CRM, funnel builder, email marketing, and call booking into a single GoHighLevel architecture. Here is the actual setup:",
+        "identity": "If you're an agency owner, SaaS founder, or developer who values lean operations, messy software stacks are costing you revenue.",
+        "provoking": "Which software in your stack is currently costing you money without delivering clear ROI?",
+        "points": [
+            "1. Automated Lead Nurture: Instant SMS & Email follow-ups within 60 seconds of form submission",
+            "2. Pipeline Visibility: Real-time dashboard tracking deal progression from lead to closed-won",
+            "3. Unified Communication: All WhatsApp, Email, and SMS conversations in one shared inbox"
+        ]
+    },
+    {
+        "name": "AI Automations",
+        "tag": "#AI #Automation #Python #WorkflowAutomation",
+        "trigger": "AI isn't going to replace developers — but developers using AI automation will replace those who don't.",
+        "reveal": "I built an autonomous workflow engine that handles lead qualification, data parsing, and auto-responses using custom LLM pipelines.",
+        "identity": "As engineers and automation architects, our job isn't to write more code. It's to eliminate manual work entirely.",
+        "provoking": "What is one repetitive task in your daily workflow that you haven't automated yet?",
+        "points": [
+            "1. Event-Driven Triggers: Webhooks intercept inbound leads in real-time",
+            "2. Intelligent Parsing: LLM extracts intent, budget, and urgency from unstructured text",
+            "3. Zero-Delay Execution: Auto-routes actions directly to CRM and team notifications"
+        ]
+    },
+    {
+        "name": "CRMs & Sales Pipelines",
+        "tag": "#CRM #SalesPipeline #BusinessGrowth #Tech",
+        "trigger": "80% of sales leads are lost simply because of delayed follow-up.",
+        "reveal": "A structured CRM workflow with automated stage triggers changes everything. Here's how we structured our sales pipeline:",
+        "identity": "If you are building products or offering services, your CRM is the engine of your entire revenue operation.",
+        "provoking": "How many minutes does your team take to follow up with a fresh inbound lead?",
+        "points": [
+            "1. Stage 1 (Prospect): Instant automated greeting + calendar booking link",
+            "2. Stage 2 (Demo Done): Automated proposal delivery & follow-up sequence",
+            "3. Stage 3 (Closed Won): Instant onboarding trigger & webhook notification"
+        ]
+    },
+    {
+        "name": "High-Converting Funnels",
+        "tag": "#Funnels #WebDevelopment #ConversionOptimization #Growth",
+        "trigger": "A beautiful website without a clear funnel conversion mechanism is just an expensive digital brochure.",
+        "reveal": "We redesigned our funnel architecture with lightning-fast load times and a single primary Call-to-Action. The result?",
+        "identity": "Whether you are a full-stack dev or a digital marketer, conversion rate optimization (CRO) is a superpower.",
+        "provoking": "What is the single biggest bottleneck stopping visitors on your landing page from converting?",
+        "points": [
+            "1. Sub-1-Second Load Speed: Zero heavy bloat, optimized assets, instant render",
+            "2. Frictionless Lead Form: Only ask for essential details to maximize completions",
+            "3. One-Click Social Proof: Embed verified customer results directly near the CTA"
+        ]
+    },
+    {
+        "name": "Full-Stack Development",
+        "tag": "#FullStack #WebDev #SoftwareEngineering #Code",
+        "trigger": "Over-engineering your stack in the early stage is the fastest way to kill a project.",
+        "reveal": "Here is the exact minimalist full-stack architecture I use to ship fast, reliable applications in days, not months:",
+        "identity": "As full-stack developers, we win by shipping clean, maintainable systems that solve real human problems.",
+        "provoking": "What tech stack do you default to when you need to ship a new idea in 48 hours?",
+        "points": [
+            "1. Frontend: Next.js / Tailwind CSS for responsive, accessible, ultra-fast UI",
+            "2. Backend: Node.js / Python REST API with clean modular service layers",
+            "3. Database & Hosting: PostgreSQL + Vercel / Docker for zero-friction deployments"
+        ]
+    },
+    {
+        "name": "Robot Engineering & Hardware",
+        "tag": "#Robotics #RoboticEngineering #Hardware #AIHardware",
+        "trigger": "Hardware is hard. But combining physical robotics with modern AI vision makes the impossible effortless.",
+        "reveal": "We integrated AI vision sensors with robotic microcontrollers to build an autonomous pick-and-place tracking system.",
+        "identity": "To all roboticists, hardware builders, and embedded engineers: physical world automation is the next massive frontier.",
+        "provoking": "Are you building hardware solutions or software-only systems this year?",
+        "points": [
+            "1. Real-Time Vision: Embedded camera feeds frames directly to lightweight AI models",
+            "2. Kinematic Control: Microsecond motor control for smooth robotic arm movement",
+            "3. Edge Compute: Running inference directly on edge hardware for zero latency"
+        ]
+    }
+]
+
+def build_trip_post(topic_item):
+    """
+    Builds a LinkedIn post adhering strictly to the TRIP framework:
+    T = Triggering Hook
+    R = Reveal (Solution / Technical Breakdown)
+    I = Identity (Aligning with target audience)
+    P = Provoking Question (High-engagement CTA)
+    """
+    post_lines = [
+        f"{topic_item['trigger']}\n",
+        f"{topic_item['reveal']}\n",
+    ]
+    for pt in topic_item['points']:
+        post_lines.append(f"{pt}")
+    
+    post_lines.append(f"\n{topic_item['identity']}\n")
+    post_lines.append(f"👉 {topic_item['provoking']}\n")
+    post_lines.append(topic_item['tag'])
+    
+    return "\n".join(post_lines)
 
 def generate_post():
     today = datetime.now(timezone.utc)
     weekday = today.weekday()
-    week_parity = today.isocalendar()[1] % 2
-
-    template_info = get_template_for_day(weekday, week_parity)
-    template_key = template_info["key"]
-
-    # 40% chance: AI/Tech news post, 60% chance: GitHub project post
-    post_type = random.choices(["news", "github"], weights=[40, 60])[0]
     
-    if post_type == "news":
-        stories = fetch_hn_stories()
-        ai_stories = filter_ai_stories(stories)
-        if ai_stories:
-            story = random.choice(ai_stories[:5])
-            post_text = build_news_post(story)
-            hashtags = "\n#AI #Tech"
-            post_text = post_text.strip() + hashtags
-            
-            result_data = {
-                "template": "news",
-                "repo": "hacker-news",
-                "score": story["score"],
-                "post": post_text,
-                "timestamp": today.isoformat(),
-            }
-            if len(post_text) > 3000:
-                lines = post_text.split("\n")
-                post_text = "\n".join(lines[:40])
-            return result_data
-
-    # Fallback: GitHub project post
-    cooled_down = load_cooldown()
-    result = get_best_repo(cooled_down_repos=set(cooled_down))
+    # Select topic based on day to maintain structured variety across all 6 core topics
+    topic_item = CORE_TOPICS[weekday % len(CORE_TOPICS)]
+    post_text = build_trip_post(topic_item)
     
-    if not result:
-        print("No suitable repo found for today. Trying news fallback...")
-        stories = fetch_hn_stories()
-        ai_stories = filter_ai_stories(stories)
-        if ai_stories:
-            story = random.choice(ai_stories[:5])
-            post_text = build_news_post(story)
-            hashtags = "\n#AI #Tech"
-            post_text = post_text.strip() + hashtags
-            result_data = {
-                "template": "news",
-                "repo": "hacker-news",
-                "score": story["score"],
-                "post": post_text,
-                "timestamp": today.isoformat(),
-            }
-            if len(post_text) > 3000:
-                lines = post_text.split("\n")
-                post_text = "\n".join(lines[:40])
-            return result_data
-        print("No post generated.")
-        return None
-
-    score, repo_name, description, details = result
-    
-    builder = BUILDERS.get(template_key)
-    if not builder:
-        print(f"No builder for template: {template_key}")
-        return None
-
-    post_text = builder(repo_name, description, details)
-    
-    lines = post_text.strip().split("\n")
-    short_lines = [l for l in lines if len(l.split()) > 5]
-    char_count = len(post_text)
-    
-    hashtags = ""
-    if details and details.get("topics"):
-        used = []
-        for t in details["topics"]:
-            clean = t.replace("-", "").replace(" ", "")
-            if clean not in used and len(used) < 2:
-                used.append(clean)
-        if used:
-            hashtags = "\n" + " ".join(f"#{h}" for h in used)
-    
-    post_text = post_text.strip() + hashtags
-    
-    if len(post_text) > 3000:
-        lines = post_text.split("\n")
-        post_text = "\n".join(lines[:40]) + "\n\n[continued...]"
-
     result_data = {
-        "template": template_key,
-        "repo": repo_name,
-        "score": score,
+        "template": "trip_framework",
+        "topic": topic_item["name"],
+        "repo": topic_item["name"],
+        "score": 10.0,
         "post": post_text,
         "timestamp": today.isoformat(),
     }
-    
-    # Update cooldown
-    cooled_down.append(repo_name)
-    save_cooldown(cooled_down[-20:])
     
     return result_data
 
