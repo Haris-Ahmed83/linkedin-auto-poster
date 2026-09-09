@@ -57,6 +57,10 @@ class LinkedInAPI:
     def upload_image_asset(self, author_urn, image_bytes):
         upload_url, asset_urn = self.register_image_upload(author_urn)
         self.upload_image_bytes(upload_url, image_bytes)
+        # LinkedIn needs a few seconds to process the uploaded asset before it
+        # can be attached to a post — without this wait, posts go image-less.
+        print("[LinkedIn] Waiting 8s for image asset processing...")
+        time.sleep(8)
         return asset_urn
 
     def create_post(self, author_urn, content_text, image_urn=None):

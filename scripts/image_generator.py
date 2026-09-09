@@ -79,18 +79,21 @@ def create_image_prompt(post_data):
 
 def _try_huggingface(prompt):
     """
-    Generate HD image via HuggingFace Inference API.
-    Tries multiple working models in order. Returns raw PNG bytes.
+    Generate HD image via HuggingFace Inference Router.
+    Only uses router.huggingface.co (api-inference.huggingface.co is deprecated).
+    Tries models known to work on the free hf-inference provider.
     """
     if not HF_TOKEN:
         print("[ImageGen] No HF_TOKEN configured, skipping HuggingFace.")
         return None
 
-    # Models listed from fastest/most reliable to fallback
+    # Models confirmed supported by hf-inference free provider for text-to-image
     models = [
-        "black-forest-labs/FLUX.1-schnell",
-        "stabilityai/stable-diffusion-xl-base-1.0",
-        "runwayml/stable-diffusion-v1-5",
+        "stabilityai/stable-diffusion-2-1",
+        "stabilityai/sdxl-turbo",
+        "Lykon/dreamshaper-xl-lightning",
+        "SG161222/RealVisXL_V4.0",
+        "dataautogpt3/ProteusV0.4",
     ]
 
     headers = {
@@ -100,43 +103,34 @@ def _try_huggingface(prompt):
     }
 
     for model in models:
-        # Try both the legacy and new router endpoints
-        endpoints = [
-            f"https://api-inference.huggingface.co/models/{model}",
-            f"https://router.huggingface.co/hf-inference/models/{model}",
-        ]
-        for url in endpoints:
-            try:
-                print(f"[ImageGen] Trying HuggingFace: {model.split('/')[-1]}...")
-                resp = requests.post(
-                    url,
-                    headers=headers,
-                    json={"inputs": prompt, "parameters": {"width": 1024, "height": 576}},
-                    timeout=120,
-                )
-                if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("image"):
-                    size_kb = len(resp.content) // 1024
-                    print(f"[ImageGen] ✅ HuggingFace image generated! Size: {size_kb}KB")
-                    return resp.content
-                elif resp.status_code == 503:
-                    # Model loading — wait and retry once
-                    print(f"[ImageGen] HF model loading (503), waiting 20s...")
-                    time.sleep(20)
-                    resp2 = requests.post(url, headers=headers,
-                                          json={"inputs": prompt, "parameters": {"width": 1024, "height": 576}},
-                                          timeout=120)
-                    if resp2.status_code == 200 and resp2.headers.get("content-type", "").startswith("image"):
-                        size_kb = len(resp2.content) // 1024
-                        print(f"[ImageGen] ✅ HuggingFace image generated after wait! Size: {size_kb}KB")
-                        return resp2.content
-                    print(f"[ImageGen] HF still unavailable: {resp2.status_code}")
-                elif resp.status_code in [410, 404]:
-                    print(f"[ImageGen] HF endpoint gone ({resp.status_code}), trying next endpoint...")
-                    break  # endpoint gone, try next endpoint for this model
-                else:
-                    print(f"[ImageGen] HF returned: {resp.status_code} — {resp.text[:100]}")
-            except Exception as e:
-                print(f"[ImageGen] HF error: {e}")
+        url = f"https://router.huggingface.co/hf-inference/models/{model}"
+        try:
+            print(f"[ImageGen] Trying HuggingFace: {model.split('/')[-1]}...")
+            resp = requests.post(
+                url,
+                headers=headers,
+                json={"inputs": prompt},
+                timeout=120,
+            )
+            if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("image"):
+                size_kb = len(resp.content) // 1024
+                print(f"[ImageGen] ✅ HuggingFace image! Size: {size_kb}KB (model: {model.split('/')[-1]})")
+                return resp.content
+            elif resp.status_code == 503:
+                print(f"[ImageGen] HF model loading (503), waiting 25s and retrying...")
+                time.sleep(25)
+                resp2 = requests.post(url, headers=headers, json={"inputs": prompt}, timeout=120)
+                if resp2.status_code == 200 and resp2.headers.get("content-type", "").startswith("image"):
+                    size_kb = len(resp2.content) // 1024
+                    print(f"[ImageGen] ✅ HuggingFace image after wait! Size: {size_kb}KB")
+                    return resp2.content
+                print(f"[ImageGen] HF still unavailable: {resp2.status_code}")
+            elif resp.status_code in [404, 410]:
+                print(f"[ImageGen] Model not available ({resp.status_code}), trying next...")
+            else:
+                print(f"[ImageGen] HF {model.split('/')[-1]}: {resp.status_code} — {resp.text[:80]}")
+        except Exception as e:
+            print(f"[ImageGen] HF error ({model.split('/')[-1]}): {e}")
 
     return None
 
