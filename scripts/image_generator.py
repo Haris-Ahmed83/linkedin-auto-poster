@@ -7,70 +7,52 @@ POLLINATIONS_URL = "https://image.pollinations.ai/prompt/{prompt}?width=1216&hei
 
 def create_image_prompt(post_data):
     """
-    Constructs an ultra-specific, high-converting visual prompt based on the post content.
-    Ensures the image visually depicts the exact topic, code, or architecture discussed.
+    Constructs ultra-clean, high-impact 3D visual prompts optimized for AI image generation.
+    Focuses on photorealistic, high-end 3D art without distorted text artifacts.
     """
-    topic    = post_data.get("topic", post_data.get("repo", "Tech Innovation"))
-    template = post_data.get("template", "trip")
-    text     = post_data.get("post", "")
+    topic = post_data.get("topic", post_data.get("repo", "Tech Innovation"))
 
-    # Extract key statements and hook from post text
-    lines = [l.strip() for l in text.split("\n") if l.strip() and not l.startswith("#")]
-    hook_line = lines[0] if lines else topic
-    summary_snippet = " ".join(lines[1:4])[:220]
-
-    # Specialized visual mapping per core topic
-    topic_visuals = {
+    # Crisp, impressive 3D visual concepts tailored specifically to each topic
+    topic_prompts = {
         "GHL (GoHighLevel)": (
-            "Split visual dashboard comparison for GoHighLevel GHL marketing automation: "
-            "Left side: cluttered screen with broken integration red icons (Zapier, Mailchimp, Calendly). "
-            "Right side: glowing green unified futuristic CRM workflow hub showing lead conversion funnels and auto-booking. "
-            "Text overlay in elegant bold typography: 'GO HIGH LEVEL: ONE UNIFIED AUTOMATION STACK'."
+            "Professional 3D isometric mockup of an all-in-one digital marketing automation hub. "
+            "Glowing glass nodes connecting lead funnels, CRM dashboards, and automated messaging. "
+            "Dark blue and emerald green ambient lighting, cinematic studio render, 8k resolution, photorealistic, trending on Polycount."
         ),
         "AI Automations": (
-            "Futuristic AI automation blueprint diagram: glowing neon nodes connecting LLM APIs, webhooks, auto-responders, and autonomous AI agents. "
-            "Dark cyberpunk office setup with translucent glass screens showing python automation code and live data pipelines. "
-            "Bold headline visual: 'AUTONOMOUS AI WORKFLOWS IN ACTION'."
+            "Futuristic 3D concept art of artificial intelligence neural network processing data streams. "
+            "Translucent glowing cyan and purple glass nodes, sleek workflow automation pipelines, dark slate background, "
+            "Unreal Engine 5 render, ray tracing, octave render, hyper detailed."
         ),
         "CRMs & Sales Pipelines": (
-            "Sleek modern CRM sales pipeline analytics matrix. Vibrant kanban columns moving leads automatically from Prospect to Closed Won. "
-            "3D rendered floating glowing glass cards showing lead scoring, automated deal stage triggers, and revenue growth charts. "
-            "Clean tech aesthetic with dark slate background and bright emerald-cyan lighting."
+            "Modern 3D financial and sales CRM dashboard floating isometric cards. "
+            "Clean glassmorphism UI, glowing green growth analytics chart, sleek deal pipeline columns, "
+            "dark sleek backdrop, studio lighting, highly detailed 3D visualization."
         ),
         "High-Converting Funnels": (
-            "3D holographic funnel structure visualization: top wide section receiving organic multi-channel traffic, "
-            "middle section processing automated lead lead magnet nurture sequences, bottom glowing spout outputting qualified sales bookings. "
-            "Vibrant gradient lines, modern SaaS landing page UI elements hovering around the funnel."
+            "High-end 3D visual art of a glowing digital conversion funnel. "
+            "Streams of golden light particles entering a sleek translucent funnel and transforming into green success checkmarks. "
+            "Dark executive navy background, 3D render, luxury corporate tech aesthetic."
         ),
         "Full-Stack Development": (
-            "Modern full-stack developer workspace setup: high-end vertical monitors showing clean backend API code (Node.js/Python), "
-            "frontend React/Next.js UI preview, database schema diagrams, and terminal logs. "
-            "Atmospheric dark-mode room with subtle ambient neon lighting and glowing tech badges."
+            "Sleek 3D developer workspace aesthetic. Holographic code structures floating over a futuristic glass desk setup, "
+            "ultrawide monitor with clean glowing syntax code, subtle dark neon lighting, sharp focus, 8k photorealistic architecture."
         ),
         "Robot Engineering & Hardware": (
-            "High-tech robotics engineering studio: advanced robotic arm assembly integrated with microcontrollers, AI vision sensors, and circuit boards. "
-            "Detailed CAD wireframe blueprint overlay combined with real hardware components, showing precision mechanical engineering and ROS code."
-        ),
+            "Close-up detailed 3D render of a futuristic precision robotic arm assembly. "
+            "Carbon fiber joint components, glowing micro-circuitry, industrial cybernetic design, "
+            "dramatic studio lighting, ultra-sharp detail, Octane Render."
+        )
     }
 
-    specific_visual = topic_visuals.get(topic)
+    # Fallback for any other topic
+    fallback = (
+        f"Professional 3D isometric graphic representing '{topic}'. "
+        "Sleek glassmorphism visual elements, futuristic dark mode tech aesthetic, "
+        "vibrant glowing neon highlights, 8k resolution, cinematic lighting, ultra high quality."
+    )
 
-    if specific_visual:
-        prompt = (
-            f"Ultra-professional dark-mode LinkedIn post banner image. {specific_visual} "
-            f"Context: {summary_snippet}. "
-            f"Style: Premium 4K resolution, sleek modern lighting, dark slate and neon accents, "
-            f"no watermarks, photorealistic detail, highly engaging social media graphic."
-        )
-    else:
-        prompt = (
-            f"Sleek professional dark-mode LinkedIn graphic about '{topic}'. "
-            f"Visual representation: {hook_line}. Context: {summary_snippet}. "
-            f"Style: Dark tech aesthetic, vibrant indigo/cyan neon highlights, modern 3D glassmorphic UI elements, "
-            f"ultra sharp 4K quality, no text watermarks, professional SaaS visual."
-        )
-
-    return prompt
+    return topic_prompts.get(topic, fallback)
 
 
 def _try_pollinations(prompt):
