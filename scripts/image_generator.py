@@ -222,7 +222,7 @@ def _try_pillow_card(post_data: dict) -> bytes | None:
     )
 
     # ── Author branding bottom-right ───────────────────────────
-    brand = "Haris Ahmed  •  linkedin.com"
+    brand = "Haris Ahmed  -  linkedin.com/in/harisahmed"
     brand_w = draw.textlength(brand, font=font_brand) if hasattr(draw, 'textlength') else 240
     draw.text(
         (card_x2 - brand_w - 20, card_y2 - 38),
@@ -245,55 +245,54 @@ def _try_pillow_card(post_data: dict) -> bytes | None:
 
 
 # ─────────────────────────────────────────────────────────────
-#  Fallback 1: Gemini API keys
+#  Primary: Gemini 2.0 Flash Image Generation
 # ─────────────────────────────────────────────────────────────
-def _try_gemini_keys(prompt):
-    """Try all configured Gemini keys for image generation, skip on 429."""
+def _try_gemini_image(prompt: str) -> bytes | None:
+    """
+    Generate HD image via Gemini 2.0 Flash image generation.
+    Uses hardcoded model name — no enumeration needed.
+    Rate limits won't be hit for 1 image/day production use.
+    """
+    # Direct model — no dynamic lookup needed
+    MODEL = "models/gemini-2.0-flash-preview-image-generation"
+
     for api_key in GEMINI_API_KEYS:
-        print(f"[ImageGen] Trying Gemini key (...{api_key[-4:]})...")
-        models_resp = requests.get(
-            f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}",
-            timeout=30
-        )
-        if models_resp.status_code != 200:
-            continue
+        print(f"[ImageGen] Trying Gemini image gen (key ...{api_key[-4:]})...")
+        try:
+            resp = requests.post(
+                f"https://generativelanguage.googleapis.com/v1beta/{MODEL}:generateContent?key={api_key}",
+                headers={"Content-Type": "application/json"},
+                json={
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {"responseModalities": ["IMAGE", "TEXT"]},
+                },
+                timeout=120,
+            )
 
-        models      = [m["name"] for m in models_resp.json().get("models", [])]
-        image_model = next((m for m in models if "-image" in m and "lite" not in m), None) \
-                   or next((m for m in models if "-image" in m), None)
-
-        if not image_model:
-            print("[ImageGen] No Gemini image model found.")
-            continue
-
-        resp = requests.post(
-            f"https://generativelanguage.googleapis.com/v1beta/{image_model}:generateContent?key={api_key}",
-            headers={"Content-Type": "application/json"},
-            json={
-                "contents": [{"parts": [{"text": prompt}]}],
-                "generationConfig": {"responseModalities": ["IMAGE"]}
-            },
-            timeout=60
-        )
-
-        if resp.status_code == 200:
-            for candidate in resp.json().get("candidates", []):
-                for part in candidate.get("content", {}).get("parts", []):
-                    if "inlineData" in part:
-                        img = base64.b64decode(part["inlineData"]["data"])
-                        print(f"[ImageGen] ✅ Gemini image generated! Size: {len(img)//1024}KB")
-                        return img
-            print("[ImageGen] No image in Gemini response.")
-        elif resp.status_code == 429:
-            print("[ImageGen] Gemini rate limit, trying next key...")
-        else:
-            print(f"[ImageGen] Gemini failed: {resp.status_code}")
+            if resp.status_code == 200:
+                for candidate in resp.json().get("candidates", []):
+                    for part in candidate.get("content", {}).get("parts", []):
+                        if "inlineData" in part:
+                            img = base64.b64decode(part["inlineData"]["data"])
+                            size_kb = len(img) // 1024
+                            print(f"[ImageGen] ✅ Gemini image! Size: {size_kb}KB")
+                            return img
+                print("[ImageGen] Gemini responded but no image in output — trying next key.")
+            elif resp.status_code == 429:
+                print(f"[ImageGen] Gemini key ...{api_key[-4:]} rate limited, trying next...")
+            elif resp.status_code == 404:
+                print(f"[ImageGen] Gemini model not found for key ...{api_key[-4:]}, skipping.")
+                break  # Same model, no point retrying other keys for 404
+            else:
+                print(f"[ImageGen] Gemini: {resp.status_code} — {resp.text[:120]}")
+        except Exception as e:
+            print(f"[ImageGen] Gemini error: {e}")
 
     return None
 
 
 # ─────────────────────────────────────────────────────────────
-#  Fallback 2: Pollinations
+#  Fallback 1: Pillow branded card (instant, no API)
 # ─────────────────────────────────────────────────────────────
 def _try_pollinations(prompt):
     """Last-resort fallback: Pollinations.ai free image generation."""
@@ -323,26 +322,29 @@ def generate_image_bytes(post_data):
     """
     Generate a professional HD image for a LinkedIn post.
     Priority:
-      1. Pillow HD card  — instant, no API, always 1200×627
-      2. Gemini          — if API key has image access
-      3. Pollinations    — last resort
+      1. Gemini 2.0 Flash  — AI-generated photo-realistic images (preferred)
+      2. Pillow HD card     — instant branded fallback, no API needed
+      3. Pollinations       — last resort
     """
-    topic = post_data.get("topic", post_data.get("repo", "post"))
-    print(f"[ImageGen] Generating image for: '{topic}'")
+    topic  = post_data.get("topic", post_data.get("repo", "post"))
+    text   = post_data.get("post", post_data.get("text", ""))
+    prompt = _build_prompt(topic, text)
 
-    # 1. Pillow card — primary, always works
+    print(f"[ImageGen] Generating image for: '{topic}'")
+    print(f"[ImageGen] Prompt: {prompt[:120]}...")
+
+    # 1. Gemini — primary, photo-realistic AI images
+    img = _try_gemini_image(prompt)
+    if img:
+        return img
+
+    # 2. Pillow card — instant fallback (if Gemini rate-limited)
+    print("[ImageGen] Gemini unavailable, falling back to Pillow card...")
     img = _try_pillow_card(post_data)
     if img:
         return img
 
-    # 2. Gemini
-    from image_generator import _build_prompt
-    prompt = _build_prompt(topic)
-    img = _try_gemini_keys(prompt)
-    if img:
-        return img
-
-    # 3. Pollinations
+    # 3. Pollinations — last resort
     img = _try_pollinations(prompt)
     if img:
         return img
@@ -351,9 +353,24 @@ def generate_image_bytes(post_data):
     return None
 
 
-def _build_prompt(topic: str) -> str:
-    """Minimal prompt builder for API fallbacks."""
-    return (
-        f"Professional 4K cinematic photograph for a LinkedIn post about '{topic}', "
-        "dark background, high-end corporate aesthetic, no text, no words"
+def _build_prompt(topic: str, text: str = "") -> str:
+    """Build a rich Gemini image generation prompt from topic and post text."""
+    # Extract hook line for context
+    hook = ""
+    for line in text.split("\n"):
+        line = line.strip()
+        if line and not line.startswith("#"):
+            hook = line[:120]
+            break
+
+    style = _pick_style(topic)
+    label = style["label"]
+
+    base = (
+        f"Professional LinkedIn post image about {label}. "
+        f"Photorealistic office or tech environment scene. "
+        f"The visual should relate to: {hook or topic}. "
+        "High-end corporate aesthetic, cinematic lighting, 4K quality. "
+        "No overlaid text, no words, clean composition."
     )
+    return base
