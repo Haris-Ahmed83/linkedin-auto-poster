@@ -8,67 +8,52 @@ POLLINATIONS_URL = "https://image.pollinations.ai/prompt/{prompt}?width=1216&hei
 def create_image_prompt(post_data):
     """
     Dynamically constructs a professional 4K image prompt strictly based on 
-    the post text content, topic, and key points.
+    the post text content, topic, and key points, excluding text artifacts.
     """
     topic = post_data.get("topic", post_data.get("repo", "Tech Innovation"))
     text  = post_data.get("post", "")
 
-    # Extract non-empty lines excluding hashtags
-    lines = [l.strip() for l in text.split("\n") if l.strip() and not l.startswith("#")]
-    hook  = lines[0] if lines else topic
-    
-    # Extract breakdown points from post text
-    points = [l for l in lines if l.startswith(("1.", "2.", "3.", "-", "•", "👉"))]
-    points_summary = " ".join(points[:3]) if points else " ".join(lines[1:4])[:200]
+    # Clean text instruction to prevent blurred AI font gibberish
+    no_text_suffix = ", no text, no words, no letters, no typography, clean visual illustration, 8k resolution, photorealistic studio render"
 
-    # Map visual style dynamically based on post context & topic
     if "ghl" in topic.lower() or "gohighlevel" in text.lower():
         prompt = (
-            f"Ultra-professional 4K LinkedIn infographic for GoHighLevel (GHL) automation. "
-            f"Main Concept: {hook}. Key Points: {points_summary}. "
-            f"Visual elements: Clean corporate vector infographic, high-contrast dashboard metrics, "
-            f"glowing green conversion badges, dark blue and slate accents, crisp executive typography, photorealistic 8k studio render."
+            "Ultra-professional 3D marketing automation hub visual representation for GoHighLevel. "
+            "Clean isometric glass CRM dashboard, glowing green workflow nodes, lead pipeline charts, dark navy slate aesthetic"
+            + no_text_suffix
         )
     elif "ai" in topic.lower() or "automation" in text.lower():
         prompt = (
-            f"Sleek professional 4K tech graphic about AI Automations. "
-            f"Topic Context: {hook}. Core Details: {points_summary}. "
-            f"Visual elements: Futuristic glowing neural nodes, clean workflow automation flowchart, "
-            f"dark slate background with vibrant cyan and emerald lighting, high quality 3D glassmorphic SaaS illustration."
+            "Futuristic 3D concept art of artificial intelligence workflow automation. "
+            "Translucent glowing cyan and purple glass neural nodes, dark background, Unreal Engine 5 render, ray tracing"
+            + no_text_suffix
         )
     elif "crm" in topic.lower() or "pipeline" in text.lower() or "sales" in text.lower():
         prompt = (
-            f"Professional 4K sales analytics graphic for LinkedIn. "
-            f"Headline Concept: {hook}. Focus: {points_summary}. "
-            f"Visual elements: Modern CRM deal pipeline cards, green revenue growth charts, "
-            f"sleek analytics dashboard UI, dark executive slate aesthetic, ultra sharp 4K render."
+            "Modern 3D sales analytics dashboard mockup floating visual elements. "
+            "Clean glassmorphism UI cards, glowing green growth trend chart, sleek deal pipeline columns, dark backdrop"
+            + no_text_suffix
         )
     elif "funnel" in topic.lower() or "conversion" in text.lower():
         prompt = (
-            f"High-impact 4K marketing funnel visual graphic for LinkedIn. "
-            f"Main Theme: {hook}. Highlights: {points_summary}. "
-            f"Visual elements: Glowing digital conversion funnel, golden light streams, high-converting landing page UI mockup, "
-            f"luxury corporate dark navy background, clean vector graphics."
+            "High-end 3D visual art of a glowing digital conversion funnel. "
+            "Streams of golden light particles entering a sleek translucent funnel and transforming into green success badges"
+            + no_text_suffix
         )
     elif "full-stack" in topic.lower() or "dev" in topic.lower() or "stack" in text.lower():
         prompt = (
-            f"Professional 4K developer tech architecture banner for LinkedIn. "
-            f"Main Topic: {hook}. Tech Stack: {points_summary}. "
-            f"Visual elements: Ultra-clean full-stack architecture diagram, modern dark IDE syntax window, "
-            f"minimalist developer workspace setup, glowing cyan and violet lighting, crisp 8k render."
+            "Sleek 3D developer workspace aesthetic, holographic code structures floating over a futuristic glass desk setup, dark neon lighting"
+            + no_text_suffix
         )
     elif "robot" in topic.lower() or "hardware" in topic.lower():
         prompt = (
-            f"High-tech 4K engineering graphic for LinkedIn. "
-            f"Core Topic: {hook}. Hardware Specs: {points_summary}. "
-            f"Visual elements: Detailed 3D robotic arm vision assembly, glowing micro-circuitry blueprints, "
-            f"dramatic studio lighting, ultra-sharp cybernetic engineering art."
+            "Close-up detailed 3D render of a futuristic precision robotic arm assembly, carbon fiber joints, glowing micro-circuitry blueprints"
+            + no_text_suffix
         )
     else:
         prompt = (
-            f"Ultra-professional 4K corporate tech graphic for LinkedIn about '{topic}'. "
-            f"Main Headline: {hook}. Context: {points_summary}. "
-            f"Visual style: High contrast vector infographic, dark mode SaaS design, glowing green accents, 8k resolution, crisp photorealistic quality."
+            f"Professional 3D isometric tech visual graphic representing '{topic}', sleek glassmorphism elements, dark slate background, glowing green accents"
+            + no_text_suffix
         )
 
     return prompt
