@@ -1,11 +1,14 @@
+import asyncio
 import base64
 import io
+import json
 import time
 import textwrap
 import urllib.parse
 import urllib.request
 import requests
 from config import GEMINI_API_KEYS, HF_TOKEN
+
 
 
 # ─────────────────────────────────────────────────────────────
@@ -245,50 +248,55 @@ def _try_pillow_card(post_data: dict) -> bytes | None:
 
 
 # ─────────────────────────────────────────────────────────────
-#  Primary: Gemini 2.0 Flash Image Generation
+#  Primary: Gemini Web API Image Generation (via cookie session)
 # ─────────────────────────────────────────────────────────────
 def _try_gemini_image(prompt: str) -> bytes | None:
     """
-    Generate HD image via Gemini 2.0 Flash image generation.
-    Uses hardcoded model name — no enumeration needed.
-    Rate limits won't be hit for 1 image/day production use.
+    Generate HD image via Gemini Web API using cookie authentication.
     """
-    # Direct model — no dynamic lookup needed
-    MODEL = "models/gemini-2.0-flash-preview-image-generation"
+    cookies_json = os.environ.get("GEMINI_COOKIES")
+    if not cookies_json:
+        print("[ImageGen] GEMINI_COOKIES env var not set — skipping Gemini Web.")
+        return None
 
-    for api_key in GEMINI_API_KEYS:
-        print(f"[ImageGen] Trying Gemini image gen (key ...{api_key[-4:]})...")
-        try:
-            resp = requests.post(
-                f"https://generativelanguage.googleapis.com/v1beta/{MODEL}:generateContent?key={api_key}",
-                headers={"Content-Type": "application/json"},
-                json={
-                    "contents": [{"parts": [{"text": prompt}]}],
-                    "generationConfig": {"responseModalities": ["IMAGE", "TEXT"]},
-                },
-                timeout=120,
-            )
+    try:
+        cookies = json.loads(cookies_json)
+        psid = cookies.get("__Secure-1PSID")
+        psidts = cookies.get("__Secure-1PSIDTS")
+        if not psid or not psidts:
+            print("[ImageGen] Missing __Secure-1PSID or __Secure-1PSIDTS in GEMINI_COOKIES.")
+            return None
+    except Exception as e:
+        print(f"[ImageGen] Failed to parse GEMINI_COOKIES: {e}")
+        return None
 
-            if resp.status_code == 200:
-                for candidate in resp.json().get("candidates", []):
-                    for part in candidate.get("content", {}).get("parts", []):
-                        if "inlineData" in part:
-                            img = base64.b64decode(part["inlineData"]["data"])
-                            size_kb = len(img) // 1024
-                            print(f"[ImageGen] ✅ Gemini image! Size: {size_kb}KB")
-                            return img
-                print("[ImageGen] Gemini responded but no image in output — trying next key.")
-            elif resp.status_code == 429:
-                print(f"[ImageGen] Gemini key ...{api_key[-4:]} rate limited, trying next...")
-            elif resp.status_code == 404:
-                print(f"[ImageGen] Gemini model not found for key ...{api_key[-4:]}, skipping.")
-                break  # Same model, no point retrying other keys for 404
-            else:
-                print(f"[ImageGen] Gemini: {resp.status_code} — {resp.text[:120]}")
-        except Exception as e:
-            print(f"[ImageGen] Gemini error: {e}")
+    async def _async_gen():
+        from gemini_webapi import GeminiClient
+        client = GeminiClient(secure_1psid=psid, secure_1psidts=psidts)
+        await client.init(timeout=30)
+        chat = client.start_chat()
+        response = await chat.send_message(prompt)
+        if not response.images:
+            print("[ImageGen] Gemini Web returned no images.")
+            return None
+        for img in response.images:
+            try:
+                dl = await img.client.get(img.url)
+                data = dl.content
+                size_kb = len(data) // 1024
+                print(f"[ImageGen] ✅ Gemini Web image generated! Size: {size_kb}KB")
+                return data
+            except Exception as e:
+                print(f"[ImageGen] Failed to download Gemini Web image: {e}")
+        return None
 
-    return None
+    try:
+        print("[ImageGen] Trying Gemini Web API image gen...")
+        return asyncio.run(_async_gen())
+    except Exception as e:
+        print(f"[ImageGen] Gemini Web error: {e}")
+        return None
+
 
 
 # ─────────────────────────────────────────────────────────────
