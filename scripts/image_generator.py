@@ -379,11 +379,15 @@ def generate_image_bytes(post_data):
 
 
 def _build_prompt(topic: str, text: str = "") -> str:
-    """Build a rich Gemini image generation prompt using user's 100% exact literal prompt."""
+    """Build a rich Gemini image generation prompt for a highly professional LinkedIn image."""
     prompt = (
-        f"{text}\n\n"
-        "ma yh post linkdin pa post karna wala ho muja ek professional Atttractive is k lea image bana k do jo ma post kar sako\n\n"
-        "is text k sat images high class or attractive ho ma linkdin account pa connection zada karna chata ho is lea agr tuma muj sa kuch require ho to poch lana"
+        f"I need a highly professional, visually stunning image for a LinkedIn post about the following text:\n\n"
+        f"'{text}'\n\n"
+        f"Please generate a photorealistic, cinematic 16:9 image representing this topic. "
+        f"Style: High-end modern corporate office, business professionals in suits looking at a glowing, futuristic transparent glass digital screen (HUD). "
+        f"The glowing screen should display modern UI elements, flowcharts, or icons related to the text (e.g., CRM, Automation, Sales Funnels, Tech Architecture). "
+        f"Aesthetic: 8k resolution, hyper-realistic, dramatic cinematic lighting, glassmorphism, premium business vibe. "
+        f"Do NOT include large amounts of text, keep it abstract and visually impressive to drive high engagement and connections on LinkedIn."
     )
     return prompt
 
