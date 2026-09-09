@@ -1,90 +1,136 @@
-import os
 import base64
+import urllib.parse
 import requests
 from config import GEMINI_API_KEYS
 
-# Use Gemini 2.0 Flash image generation (generateContent with responseModalities)
-GEMINI_IMAGE_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-preview-image-generation:generateContent"
+POLLINATIONS_URL = "https://image.pollinations.ai/prompt/{prompt}?width=1216&height=832&model=flux&nologo=true&enhance=true"
 
 def create_image_prompt(post_data):
     """
-    Constructs an optimized visual prompt for Gemini Imagen based on post context.
+    Constructs an optimized visual prompt based on post context.
     """
-    repo = post_data.get("repo", "Software Project")
+    repo     = post_data.get("repo", "Software Project")
     template = post_data.get("template", "tech")
-    text = post_data.get("post", "")
-    
-    # Extract first few lines for context
-    lines = [l.strip() for l in text.split("\n") if l.strip() and not l.startswith("#")]
+    text     = post_data.get("post", "")
+
+    lines          = [l.strip() for l in text.split("\n") if l.strip() and not l.startswith("#")]
     context_snippet = " ".join(lines[:3])[:200]
-    
+
+    template_styles = {
+        "how_i_built":       "developer workspace, code on screen, building something",
+        "hot_take":          "bold statement, tech debate, futuristic contrast",
+        "lesson_learned":    "journey, growth, lessons, turning point",
+        "data_numbers":      "data visualization, charts, analytics dashboard",
+        "progress_journey":  "progress bar, milestone, journey forward",
+        "news":              "breaking tech news, AI, innovation, digital world",
+    }
+    style_hint = template_styles.get(template, "tech innovation")
+
+    # Special case for GHL
+    if "ghl" in repo.lower() or "gohighlevel" in text.lower() or "GoHighLevel" in text:
+        return (
+            "Ultra-professional dark-mode LinkedIn banner about GoHighLevel GHL marketing automation. "
+            "Split design: LEFT side shows chaos with multiple disconnected app icons floating in red-orange tones, "
+            "RIGHT side shows a single clean unified CRM dashboard in glowing emerald green neon. "
+            "Bold white headline: ONE PLATFORM ZERO CHAOS. "
+            "Dark background, indigo and emerald neon glow accents, futuristic premium SaaS aesthetic, "
+            "4K ultra sharp, no text watermarks, professional agency visual."
+        )
+
     prompt = (
-        f"A sleek, modern, professional dark-mode tech infographic banner for a LinkedIn post about '{repo}'. "
-        f"Concept: {context_snippet}. "
-        f"Style: Dark futuristic theme, vibrant indigo and emerald neon glow accents, minimalist developer aesthetic, "
-        f"high resolution, 4k, ultra clean composition, professional software engineering graphic."
+        f"Sleek professional dark-mode tech LinkedIn post banner about '{repo}'. "
+        f"Theme: {style_hint}. Context: {context_snippet}. "
+        f"Style: dark futuristic background, vibrant indigo and emerald neon glow, "
+        f"minimalist developer aesthetic, ultra sharp 4K, no watermarks, premium quality."
     )
     return prompt
 
+
+def _try_pollinations(prompt):
+    """Free image generation via Pollinations.ai — no API key needed."""
+    try:
+        encoded = urllib.parse.quote(prompt, safe="")
+        url     = POLLINATIONS_URL.format(prompt=encoded)
+        print(f"[ImageGen] Trying Pollinations.ai (free)...")
+        resp    = requests.get(url, timeout=60)
+        if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("image"):
+            print(f"[ImageGen] ✅ Pollinations image generated! Size: {len(resp.content)//1024}KB")
+            return resp.content
+        else:
+            print(f"[ImageGen] Pollinations failed: {resp.status_code}")
+    except Exception as e:
+        print(f"[ImageGen] Pollinations error: {e}")
+    return None
+
+
+def _try_gemini_keys(prompt):
+    """Try all configured Gemini keys, skip on 429."""
+    for api_key in GEMINI_API_KEYS:
+        print(f"[ImageGen] Trying Gemini key (ends ...{api_key[-4:]})...")
+        # Find model
+        models_resp = requests.get(
+            f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}",
+            timeout=30
+        )
+        if models_resp.status_code != 200:
+            print(f"[ImageGen] Model list failed: {models_resp.status_code}")
+            continue
+
+        models      = [m["name"] for m in models_resp.json().get("models", [])]
+        image_model = next((m for m in models if "-image" in m and "lite" not in m), None) \
+                   or next((m for m in models if "-image" in m), None)
+
+        if not image_model:
+            print("[ImageGen] No image model found.")
+            continue
+
+        print(f"[ImageGen] Found model: {image_model}")
+        resp = requests.post(
+            f"https://generativelanguage.googleapis.com/v1beta/{image_model}:generateContent?key={api_key}",
+            headers={"Content-Type": "application/json"},
+            json={
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {"responseModalities": ["IMAGE"]}
+            },
+            timeout=60
+        )
+
+        if resp.status_code == 200:
+            for candidate in resp.json().get("candidates", []):
+                for part in candidate.get("content", {}).get("parts", []):
+                    if "inlineData" in part:
+                        img = base64.b64decode(part["inlineData"]["data"])
+                        print(f"[ImageGen] ✅ Gemini image generated! Size: {len(img)//1024}KB")
+                        return img
+            print("[ImageGen] No image in Gemini response.")
+        elif resp.status_code == 429:
+            print("[ImageGen] Rate limit hit, trying next key...")
+            continue
+        else:
+            print(f"[ImageGen] Gemini failed: {resp.status_code}")
+
+    return None
+
+
 def generate_image_bytes(post_data):
     """
-    Calls Gemini API to generate an image based on post context.
-    Returns raw JPEG bytes or None if key is missing or request fails.
+    Generate image for a LinkedIn post.
+    Strategy: Try Gemini keys first, fallback to Pollinations.ai (free).
+    Returns raw image bytes or None.
     """
-    if not GEMINI_API_KEYS:
-        print("[ImageGen] No GEMINI_API_KEYS configured. Skipping image generation.")
-        return None
-
     prompt = create_image_prompt(post_data)
-    print(f"[ImageGen] Generating image with Gemini Imagen API for '{post_data.get('repo', 'post')}'...")
+    print(f"[ImageGen] Generating image for '{post_data.get('repo', 'post')}'...")
 
-    for api_key in GEMINI_API_KEYS:
-        print(f"[ImageGen] Trying key (ends with {api_key[-4:] if len(api_key)>4 else '***'})...")
-        models_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
-        try:
-            models_resp = requests.get(models_url, timeout=30)
-            if models_resp.status_code == 200:
-                models_data = models_resp.json()
-                available_models = [m["name"] for m in models_data.get("models", [])]
-                
-                # Find a Gemini image model
-                imagen_model = next((m for m in available_models if "-image" in m and "lite" not in m), None)
-                if not imagen_model:
-                    imagen_model = next((m for m in available_models if "-image" in m), None)
-                
-                if imagen_model:
-                    print(f"[ImageGen] Found Image model: {imagen_model}")
-                    url = f"https://generativelanguage.googleapis.com/v1beta/{imagen_model}:generateContent?key={api_key}"
-                    payload = {
-                        "contents": [{"parts": [{"text": prompt}]}],
-                        "generationConfig": {"responseModalities": ["IMAGE"]}
-                    }
-                    
-                    resp = requests.post(url, headers={"Content-Type": "application/json"}, json=payload, timeout=60)
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        candidates = data.get("candidates", [])
-                        for candidate in candidates:
-                            for part in candidate.get("content", {}).get("parts", []):
-                                if "inlineData" in part:
-                                    b64_str = part["inlineData"]["data"]
-                                    image_bytes = base64.b64decode(b64_str)
-                                    print(f"[ImageGen] Image generated successfully! Size: {len(image_bytes)} bytes.")
-                                    return image_bytes
-                        print(f"[ImageGen] No image found in response: {data}")
-                    else:
-                        print(f"[ImageGen] API call failed with status {resp.status_code}: {resp.text}")
-                        if resp.status_code == 429:
-                            print("[ImageGen] Rate limit hit. Trying next key if available...")
-                            continue # Try next key
-                else:
-                    print("[ImageGen] No image model found in available models.")
-            else:
-                print(f"[ImageGen] Failed to list models: {models_resp.status_code} {models_resp.text}")
-                if models_resp.status_code == 429:
-                    continue # Try next key
-        except Exception as e:
-            print(f"[ImageGen] Error finding or using model: {e}")
+    # 1. Try Gemini (if keys available)
+    if GEMINI_API_KEYS:
+        img = _try_gemini_keys(prompt)
+        if img:
+            return img
 
-    print("[ImageGen] Exhausted all keys. Falling back to text-only post.")
+    # 2. Free fallback: Pollinations.ai
+    img = _try_pollinations(prompt)
+    if img:
+        return img
+
+    print("[ImageGen] All methods failed. Falling back to text-only post.")
     return None
