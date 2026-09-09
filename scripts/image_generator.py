@@ -93,12 +93,12 @@ def _try_stable_horde(prompt):
             json={
                 "prompt": prompt,
                 "params": {
-                    "width": 1024,
-                    "height": 576,
-                    "steps": 25,
+                    "width": 704,
+                    "height": 396,
+                    "steps": 20,
                     "n": 1,
                     "sampler_name": "k_euler_a",
-                    "cfg_scale": 7.5,
+                    "cfg_scale": 7.0,
                 },
                 "models": ["Dreamshaper", "stable_diffusion_xl", "Stable Diffusion XL 1.0"],
                 "r2": True,
