@@ -283,14 +283,29 @@ def _try_gemini_image(prompt: str) -> bytes | None:
             return None
         for img in response.images:
             try:
-                dl = await img.client.get(img.url)
+                # Force Google CDN to return full HD 2048px resolution image instead of low-res preview
+                full_hd_url = img.url
+                if "=s" in full_hd_url:
+                    full_hd_url = full_hd_url.split("=s")[0] + "=s2048"
+                elif "=w" in full_hd_url:
+                    full_hd_url = full_hd_url.split("=w")[0] + "=w2048-h1080"
+                else:
+                    full_hd_url = full_hd_url + "=s2048"
+
+                print(f"[ImageGen] Requesting full HD image URL: {full_hd_url[:80]}...")
+                dl = await img.client.get(full_hd_url)
+                if dl.status_code != 200:
+                    print(f"[ImageGen] HD URL status {dl.status_code}, falling back to original url...")
+                    dl = await img.client.get(img.url)
+
                 data = dl.content
                 size_kb = len(data) // 1024
-                print(f"[ImageGen] ✅ Gemini Web image generated! Size: {size_kb}KB")
+                print(f"[ImageGen] ✅ Gemini Web HD image generated! Size: {size_kb}KB")
                 return data
             except Exception as e:
                 print(f"[ImageGen] Failed to download Gemini Web image: {e}")
         return None
+
 
     try:
         print("[ImageGen] Trying Gemini Web API image gen...")
