@@ -47,30 +47,35 @@ def generate_image_bytes(post_data):
             available_models = [m["name"] for m in models_data.get("models", [])]
             print(f"[ImageGen] Available models: {available_models}")
             
-            # Find an imagen model
-            imagen_model = next((m for m in available_models if "imagen" in m and "generate" in m), None)
+            # Find a Gemini image model
+            imagen_model = next((m for m in available_models if "-image" in m and "lite" not in m), None)
+            if not imagen_model:
+                imagen_model = next((m for m in available_models if "-image" in m), None)
             
             if imagen_model:
-                print(f"[ImageGen] Found Imagen model: {imagen_model}")
-                url = f"https://generativelanguage.googleapis.com/v1beta/{imagen_model}:predict?key={GEMINI_API_KEY}"
+                print(f"[ImageGen] Found Image model: {imagen_model}")
+                url = f"https://generativelanguage.googleapis.com/v1beta/{imagen_model}:generateContent?key={GEMINI_API_KEY}"
                 payload = {
-                    "instances": [{"prompt": prompt}],
-                    "parameters": {"sampleCount": 1, "aspectRatio": "1:1", "outputMimeType": "image/jpeg"}
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {"responseModalities": ["IMAGE"]}
                 }
                 
                 resp = requests.post(url, headers={"Content-Type": "application/json"}, json=payload, timeout=60)
                 if resp.status_code == 200:
                     data = resp.json()
-                    predictions = data.get("predictions", [])
-                    if predictions and "bytesBase64Encoded" in predictions[0]:
-                        b64_str = predictions[0]["bytesBase64Encoded"]
-                        image_bytes = base64.b64decode(b64_str)
-                        print(f"[ImageGen] Image generated successfully! Size: {len(image_bytes)} bytes.")
-                        return image_bytes
+                    candidates = data.get("candidates", [])
+                    for candidate in candidates:
+                        for part in candidate.get("content", {}).get("parts", []):
+                            if "inlineData" in part:
+                                b64_str = part["inlineData"]["data"]
+                                image_bytes = base64.b64decode(b64_str)
+                                print(f"[ImageGen] Image generated successfully! Size: {len(image_bytes)} bytes.")
+                                return image_bytes
+                    print(f"[ImageGen] No image found in response: {data}")
                 else:
-                    print(f"[ImageGen] Imagen API call failed with status {resp.status_code}: {resp.text}")
+                    print(f"[ImageGen] API call failed with status {resp.status_code}: {resp.text}")
             else:
-                print("[ImageGen] No 'imagen' model found in available models.")
+                print("[ImageGen] No image model found in available models.")
         else:
             print(f"[ImageGen] Failed to list models: {models_resp.status_code} {models_resp.text}")
     except Exception as e:
