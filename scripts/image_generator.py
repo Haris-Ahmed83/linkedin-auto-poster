@@ -254,65 +254,43 @@ def _try_pillow_card(post_data: dict) -> bytes | None:
 # ─────────────────────────────────────────────────────────────
 def _try_gemini_image(prompt: str) -> bytes | None:
     """
-    Generate HD image via Gemini Web API using cookie authentication.
+    Generate HD image via official Gemini API (Imagen 3) using API keys.
+    This eliminates the cookie expiration issue completely.
     """
-    cookies_json = os.environ.get("GEMINI_COOKIES")
-    if not cookies_json:
-        print("[ImageGen] GEMINI_COOKIES env var not set — skipping Gemini Web.")
+    if not GEMINI_API_KEYS:
+        print("[ImageGen] GEMINI_API_KEYS not set — skipping Gemini Image Gen.")
         return None
 
+    import random
+    key = random.choice(GEMINI_API_KEYS)
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key={key}"
+    
+    payload = {
+        "instances": [
+            {"prompt": prompt}
+        ],
+        "parameters": {
+            "sampleCount": 1,
+            "aspectRatio": "16:9"
+        }
+    }
+    
     try:
-        cookies = json.loads(cookies_json)
-        psid = cookies.get("__Secure-1PSID")
-        psidts = cookies.get("__Secure-1PSIDTS")
-        if not psid or not psidts:
-            print("[ImageGen] Missing __Secure-1PSID or __Secure-1PSIDTS in GEMINI_COOKIES.")
-            return None
+        print("[ImageGen] Requesting image from Gemini Imagen 3 API...")
+        resp = requests.post(url, json=payload, timeout=60)
+        if resp.status_code == 200:
+            data = resp.json()
+            b64_img = data["predictions"][0]["bytesBase64Encoded"]
+            img_bytes = base64.b64decode(b64_img)
+            size_kb = len(img_bytes) // 1024
+            print(f"[ImageGen] ✅ Gemini HD image generated! Size: {size_kb}KB")
+            return img_bytes
+        else:
+            print(f"[ImageGen] Gemini API failed ({resp.status_code}): {resp.text[:200]}")
     except Exception as e:
-        print(f"[ImageGen] Failed to parse GEMINI_COOKIES: {e}")
-        return None
-
-    async def _async_gen():
-        from gemini_webapi import GeminiClient
-        client = GeminiClient(secure_1psid=psid, secure_1psidts=psidts)
-        await client.init(timeout=30)
-        chat = client.start_chat()
-        response = await chat.send_message(prompt)
-        if not response.images:
-            print("[ImageGen] Gemini Web returned no images.")
-            return None
-        for img in response.images:
-            try:
-                # Force Google CDN to return full HD 2048px resolution image instead of low-res preview
-                full_hd_url = img.url
-                if "=s" in full_hd_url:
-                    full_hd_url = full_hd_url.split("=s")[0] + "=s2048"
-                elif "=w" in full_hd_url:
-                    full_hd_url = full_hd_url.split("=w")[0] + "=w2048-h1080"
-                else:
-                    full_hd_url = full_hd_url + "=s2048"
-
-                print(f"[ImageGen] Requesting full HD image URL: {full_hd_url[:80]}...")
-                dl = await img.client.get(full_hd_url)
-                if dl.status_code != 200:
-                    print(f"[ImageGen] HD URL status {dl.status_code}, falling back to original url...")
-                    dl = await img.client.get(img.url)
-
-                data = dl.content
-                size_kb = len(data) // 1024
-                print(f"[ImageGen] ✅ Gemini Web HD image generated! Size: {size_kb}KB")
-                return data
-            except Exception as e:
-                print(f"[ImageGen] Failed to download Gemini Web image: {e}")
-        return None
-
-
-    try:
-        print("[ImageGen] Trying Gemini Web API image gen...")
-        return asyncio.run(_async_gen())
-    except Exception as e:
-        print(f"[ImageGen] Gemini Web error: {e}")
-        return None
+        print(f"[ImageGen] Gemini API request error: {e}")
+    
+    return None
 
 
 
