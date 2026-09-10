@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - 'trigger_post.txt'
+      - 'trigger_company.txt'
   schedule:
     - cron: '0 5 * * 1,2,3,4,5'    # Mon-Fri at 10:00 AM PKT (5:00 AM UTC)
   workflow_dispatch:
