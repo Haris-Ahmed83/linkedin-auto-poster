@@ -93,6 +93,15 @@ class LinkedInAPI:
                 "shareMediaCategory": "NONE"
             }
 
+        # Organization URNs need a different visibility key than personal profiles
+        is_org = "organization" in author_urn
+        visibility = {
+            "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"
+        } if not is_org else {
+            "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC",
+            "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"
+        }
+
         payload = {
             "author": author_urn,
             "lifecycleState": "PUBLISHED",
@@ -103,9 +112,33 @@ class LinkedInAPI:
                 "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"
             }
         }
+
+        # For organization posts, LinkedIn requires the /v2/posts endpoint (new API)
+        if is_org:
+            url = f"{self.BASE_URL}/posts"
+            payload = {
+                "author": author_urn,
+                "commentary": share_content["shareCommentary"]["text"],
+                "visibility": "PUBLIC",
+                "distribution": {
+                    "feedDistribution": "MAIN_FEED",
+                    "targetEntities": [],
+                    "thirdPartyDistributionChannels": []
+                },
+                "lifecycleState": "PUBLISHED",
+                "isReshareDisabledByAuthor": False
+            }
+            if image_urn:
+                payload["content"] = {
+                    "media": {
+                        "altText": "Visual Content",
+                        "id": image_urn
+                    }
+                }
+
         resp = requests.post(url, headers=self.headers, json=payload)
-        if resp.status_code == 201:
-            return resp.json()
+        if resp.status_code in [200, 201]:
+            return resp.json() if resp.content else {"status": "posted"}
         raise Exception(f"Post failed: {resp.status_code} {resp.text}")
 
     def refresh_token(self, client_id, client_secret):
