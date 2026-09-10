@@ -3,6 +3,8 @@ import os
 import json
 import random
 from datetime import datetime, timezone
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from github_fetcher import get_best_repo, fetch_repo_details
 from news_fetcher import fetch_hn_stories, filter_ai_stories, build_news_post, get_trending_repos
 from templates import get_template_for_day
