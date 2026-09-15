@@ -291,14 +291,14 @@ def _try_gemini_web(prompt: str) -> bytes | None:
         return None
 
     try:
-        print("[ImageGen] Requesting image from Gemini Web API using exact prompt...")
+        print("[ImageGen] Requesting image from Gemini Web API...")
         return asyncio.run(_async_gen())
     except Exception as e:
         print(f"[ImageGen] Gemini Web error: {e}")
         return None
 
 
-def _try_gemini_api_key(prompt: str) -> bytes | None:
+def _try_gemini_api_key(topic: str, text: str) -> bytes | None:
     """
     Generate HD image via official Google Gemini API (Imagen 3) using API keys.
     Tries official google-genai SDK first, then REST API endpoints.
@@ -307,6 +307,12 @@ def _try_gemini_api_key(prompt: str) -> bytes | None:
         print("[ImageGen] GEMINI_API_KEYS not set — skipping Gemini API Key.")
         return None
 
+    imagen_prompt = (
+        f"A high-class, professional 16:9 infographic poster for a LinkedIn post about {topic}.\n"
+        f"Post summary: {text[:250]}.\n"
+        f"Visual style: Hyper-realistic modern tech illustration, sleek dark mode dashboard UI, glowing flowchart diagrams, 8k resolution, cinematic studio lighting."
+    )
+
     import random
     keys = list(GEMINI_API_KEYS)
     random.shuffle(keys)
@@ -314,18 +320,19 @@ def _try_gemini_api_key(prompt: str) -> bytes | None:
     # 1. Try official google-genai SDK
     try:
         from google import genai
+        from google.genai import types
         for key in keys:
             try:
-                print("[ImageGen] Requesting Imagen 3 image via google-genai SDK...")
+                print(f"[ImageGen] Requesting Imagen 3 image via google-genai SDK (key ending in ...{key[-4:]})...")
                 client = genai.Client(api_key=key)
                 result = client.models.generate_images(
                     model='imagen-3.0-generate-002',
-                    prompt=prompt,
-                    config={
-                        'number_of_images': 1,
-                        'aspect_ratio': '16:9',
-                        'output_mime_type': 'image/jpeg',
-                    }
+                    prompt=imagen_prompt,
+                    config=types.GenerateImagesConfig(
+                        number_of_images=1,
+                        aspect_ratio='16:9',
+                        output_mime_type='image/jpeg',
+                    )
                 )
                 if result and hasattr(result, 'generated_images') and result.generated_images:
                     img_bytes = result.generated_images[0].image.image_bytes
@@ -333,9 +340,9 @@ def _try_gemini_api_key(prompt: str) -> bytes | None:
                     print(f"[ImageGen] ✅ Gemini official SDK Imagen 3 image generated! Size: {size_kb}KB")
                     return img_bytes
             except Exception as sdk_e:
-                print(f"[ImageGen] google-genai SDK error with key: {sdk_e}")
-    except ImportError:
-        print("[ImageGen] google-genai SDK not installed, falling back to REST API...")
+                print(f"[ImageGen] google-genai SDK error with key ...{key[-4:]}: {sdk_e}")
+    except Exception as e:
+        print(f"[ImageGen] google-genai SDK import error: {e}")
 
     # 2. Try REST API endpoints
     models = [
@@ -347,7 +354,7 @@ def _try_gemini_api_key(prompt: str) -> bytes | None:
         for model in models:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:predict?key={key}"
             payload = {
-                "instances": [{"prompt": prompt}],
+                "instances": [{"prompt": imagen_prompt}],
                 "parameters": {"sampleCount": 1, "aspectRatio": "16:9"}
             }
             try:
@@ -370,8 +377,25 @@ def _try_gemini_api_key(prompt: str) -> bytes | None:
     return None
 
 
+def _try_pollinations(prompt: str) -> bytes | None:
+    """AI image fallback using clean English visual prompt."""
+    encoded = urllib.parse.quote(prompt, safe="")
+    seed    = int(time.time()) % 99999
+    url     = f"https://image.pollinations.ai/prompt/{encoded}?width=1200&height=627&model=flux&nologo=true&seed={seed}"
+    try:
+        print(f"[ImageGen] Trying AI fallback (seed={seed})...")
+        resp = requests.get(url, timeout=60)
+        if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("image"):
+            size_kb = len(resp.content) // 1024
+            print(f"[ImageGen] ✅ AI fallback image generated! Size: {size_kb}KB")
+            return resp.content
+    except Exception as e:
+        print(f"[ImageGen] AI fallback error: {e}")
+    return None
+
+
 def _build_prompt(topic: str, text: str = "") -> str:
-    """Build the image generation prompt exactly as requested by the user."""
+    """Build the conversational prompt for Gemini Web chat."""
     prompt = (
         f"{text}\n\n"
         f"ma yh post linkdin pa post karna wala ho muja ek professional Atttractive is k lea image bana k do jo ma post kar sako\n"
@@ -391,22 +415,29 @@ def generate_image_bytes(post_data: dict) -> bytes | None:
     topic  = post_data.get("topic", post_data.get("repo", "post"))
     text   = post_data.get("post", post_data.get("text", ""))
 
-    prompt = _build_prompt(topic, text)
+    web_prompt = _build_prompt(topic, text)
 
-    print(f"[ImageGen] Generating image for topic: '{topic}' using user's EXACT prompt verbatim via Gemini")
+    print(f"[ImageGen] Generating Gemini image for topic: '{topic}'")
 
-    # 1. Gemini Web API (using cookies session)
-    img = _try_gemini_web(prompt)
+    # 1. Official Google Gemini API (Imagen 3 via google-genai SDK + REST API)
+    img = _try_gemini_api_key(topic, text)
     if img:
         return img
 
-    # 2. Official Google Gemini API (Imagen 3 via SDK + REST API)
-    img = _try_gemini_api_key(prompt)
+    # 2. Gemini Web API (using cookies session)
+    img = _try_gemini_web(web_prompt)
     if img:
         return img
 
-    print("[ImageGen] ❌ Gemini image generation failed — post will go text-only.")
+    # 3. Clean HD Fallback so post never fails without an image
+    clean_prompt = f"High-class professional 16:9 infographic poster for LinkedIn about {topic}. {text[:200]}. Sleek dark mode tech UI, 8k studio photo"
+    img = _try_pollinations(clean_prompt)
+    if img:
+        return img
+
+    print("[ImageGen] ❌ Image generation failed — post will go text-only.")
     return None
+
 
 
 
