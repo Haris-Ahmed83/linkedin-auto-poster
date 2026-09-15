@@ -300,88 +300,73 @@ def _try_gemini_web(prompt: str) -> bytes | None:
 
 def _try_gemini_api_key(prompt: str) -> bytes | None:
     """
-    Generate HD image via official Gemini API using API keys.
+    Generate HD image via official Google Gemini API (Imagen 3) using API keys.
+    Tries official google-genai SDK first, then REST API endpoints.
     """
     if not GEMINI_API_KEYS:
-        print("[ImageGen] GEMINI_API_KEYS not set — skipping Gemini API key.")
+        print("[ImageGen] GEMINI_API_KEYS not set — skipping Gemini API Key.")
         return None
 
     import random
-    for key in GEMINI_API_KEYS:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key={key}"
-        payload = {
-            "instances": [
-                {"prompt": prompt}
-            ],
-            "parameters": {
-                "sampleCount": 1,
-                "aspectRatio": "16:9"
-            }
-        }
-        
-        try:
-            print("[ImageGen] Requesting image from Gemini Imagen API using exact prompt...")
-            resp = requests.post(url, json=payload, timeout=45)
-            if resp.status_code == 200:
-                data = resp.json()
-                b64_img = data["predictions"][0]["bytesBase64Encoded"]
-                img_bytes = base64.b64decode(b64_img)
-                size_kb = len(img_bytes) // 1024
-                print(f"[ImageGen] ✅ Gemini API Key image generated! Size: {size_kb}KB")
-                return img_bytes
-            else:
-                print(f"[ImageGen] Gemini API failed ({resp.status_code}): {resp.text[:200]}")
-        except Exception as e:
-            print(f"[ImageGen] Gemini API request error: {e}")
-    
-    return None
+    keys = list(GEMINI_API_KEYS)
+    random.shuffle(keys)
 
+    # 1. Try official google-genai SDK
+    try:
+        from google import genai
+        for key in keys:
+            try:
+                print("[ImageGen] Requesting Imagen 3 image via google-genai SDK...")
+                client = genai.Client(api_key=key)
+                result = client.models.generate_images(
+                    model='imagen-3.0-generate-002',
+                    prompt=prompt,
+                    config={
+                        'number_of_images': 1,
+                        'aspect_ratio': '16:9',
+                        'output_mime_type': 'image/jpeg',
+                    }
+                )
+                if result and hasattr(result, 'generated_images') and result.generated_images:
+                    img_bytes = result.generated_images[0].image.image_bytes
+                    size_kb = len(img_bytes) // 1024
+                    print(f"[ImageGen] ✅ Gemini official SDK Imagen 3 image generated! Size: {size_kb}KB")
+                    return img_bytes
+            except Exception as sdk_e:
+                print(f"[ImageGen] google-genai SDK error with key: {sdk_e}")
+    except ImportError:
+        print("[ImageGen] google-genai SDK not installed, falling back to REST API...")
 
-def _try_huggingface(prompt: str) -> bytes | None:
-    """Generate image using Hugging Face models with exact prompt."""
-    if not HF_TOKEN:
-        print("[ImageGen] HF_TOKEN not set — skipping Hugging Face.")
-        return None
-
-    headers = {"Authorization": f"Bearer {HF_TOKEN}"}
+    # 2. Try REST API endpoints
     models = [
-        "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell",
-        "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0",
+        "imagen-3.0-generate-002",
+        "imagen-3.0-generate-001",
+        "imagen-3.0-fast-generate-001",
     ]
-    payload = {"inputs": prompt}
-    for model_url in models:
-        try:
-            print(f"[ImageGen] Trying Hugging Face model using exact prompt: {model_url.split('/')[-1]}...")
-            resp = requests.post(model_url, headers=headers, json=payload, timeout=45)
-            if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("image"):
-                size_kb = len(resp.content) // 1024
-                print(f"[ImageGen] ✅ Hugging Face image generated! Size: {size_kb}KB")
-                return resp.content
-            else:
-                print(f"[ImageGen] HF model returned status {resp.status_code}: {resp.text[:150]}")
-        except Exception as e:
-            print(f"[ImageGen] HF error: {e}")
-    return None
+    for key in keys:
+        for model in models:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:predict?key={key}"
+            payload = {
+                "instances": [{"prompt": prompt}],
+                "parameters": {"sampleCount": 1, "aspectRatio": "16:9"}
+            }
+            try:
+                print(f"[ImageGen] Requesting REST API: {model}...")
+                resp = requests.post(url, json=payload, timeout=45)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    predictions = data.get("predictions", [])
+                    if predictions and "bytesBase64Encoded" in predictions[0]:
+                        b64_img = predictions[0]["bytesBase64Encoded"]
+                        img_bytes = base64.b64decode(b64_img)
+                        size_kb = len(img_bytes) // 1024
+                        print(f"[ImageGen] ✅ Gemini REST API Imagen 3 image generated! Size: {size_kb}KB")
+                        return img_bytes
+                else:
+                    print(f"[ImageGen] Gemini REST {model} failed ({resp.status_code}): {resp.text[:150]}")
+            except Exception as e:
+                print(f"[ImageGen] Gemini REST API error: {e}")
 
-
-def _try_pollinations(prompt: str) -> bytes | None:
-    """AI image generator using exact prompt."""
-    encoded = urllib.parse.quote(prompt, safe="")
-    seed    = int(time.time()) % 99999
-    urls = [
-        f"https://image.pollinations.ai/prompt/{encoded}?width=1200&height=627&model=flux&nologo=true&seed={seed}",
-        f"https://image.pollinations.ai/prompt/{encoded}?width=1200&height=627&model=turbo&nologo=true&seed={seed}",
-    ]
-    for url in urls:
-        try:
-            print(f"[ImageGen] Trying AI image generator using exact prompt (seed={seed})...")
-            resp = requests.get(url, timeout=60)
-            if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("image"):
-                size_kb = len(resp.content) // 1024
-                print(f"[ImageGen] ✅ AI image generated! Size: {size_kb}KB")
-                return resp.content
-        except Exception as e:
-            print(f"[ImageGen] AI image generator error: {e}")
     return None
 
 
@@ -401,37 +386,28 @@ def _build_prompt(topic: str, text: str = "") -> str:
 # ─────────────────────────────────────────────────────────────
 def generate_image_bytes(post_data: dict) -> bytes | None:
     """
-    Generate an AI image for a LinkedIn post strictly using the user's exact prompt.
+    Generate an AI image for a LinkedIn post strictly using Gemini.
     """
     topic  = post_data.get("topic", post_data.get("repo", "post"))
     text   = post_data.get("post", post_data.get("text", ""))
 
     prompt = _build_prompt(topic, text)
 
-    print(f"[ImageGen] Generating image for topic: '{topic}' using user's EXACT prompt verbatim")
+    print(f"[ImageGen] Generating image for topic: '{topic}' using user's EXACT prompt verbatim via Gemini")
 
-    # 1. Gemini Web API
+    # 1. Gemini Web API (using cookies session)
     img = _try_gemini_web(prompt)
     if img:
         return img
 
-    # 2. Gemini API Key
+    # 2. Official Google Gemini API (Imagen 3 via SDK + REST API)
     img = _try_gemini_api_key(prompt)
     if img:
         return img
 
-    # 3. Hugging Face
-    img = _try_huggingface(prompt)
-    if img:
-        return img
-
-    # 4. Pollinations AI
-    img = _try_pollinations(prompt)
-    if img:
-        return img
-
-    print("[ImageGen] ❌ Image generation failed — post will go text-only.")
+    print("[ImageGen] ❌ Gemini image generation failed — post will go text-only.")
     return None
+
 
 
 
