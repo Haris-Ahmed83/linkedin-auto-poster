@@ -27,78 +27,87 @@ def _build_prompt(topic: str, text: str = "") -> str:
     )
 
 
-def _build_imagen_prompt(topic: str, text: str = "") -> str:
-    """Same user verbatim prompt for Google Imagen 3 (both SDK and REST)."""
+def _build_image_prompt(topic: str, text: str = "") -> str:
+    """Same user verbatim prompt for the Gemini image models (SDK + REST)."""
     return _build_prompt(topic, text)
 
 
 # ─────────────────────────────────────────────────────────────
-#  Method 1: Official Google Gemini API - Imagen 3
+#  Method 1: Official Google Gemini API - image generation models
 # ─────────────────────────────────────────────────────────────
+# The old Imagen 3 "generate_images" / ":predict" method no longer works with
+# free-tier Gemini Developer API keys, so we use the modern generateContent
+# endpoint with Gemini's native image models (Nano Banana family).
+_GEMINI_IMAGE_MODELS = [
+    "gemini-2.5-flash-image",
+    "gemini-2.0-flash-preview-image-generation",
+    "gemini-2.0-flash",
+]
+
+
 def _try_gemini_api_key(topic: str, text: str) -> bytes | None:
     """
-    Generate HD image via official Google Gemini API (Imagen 3).
-    Tries google-genai SDK first, then falls back to REST API.
+    Generate an image via the official Gemini API using generateContent and
+    Gemini's native image models. Works with normal (free-tier) API keys.
+    Tries google-genai SDK first, then REST API, across all configured keys.
     """
     if not GEMINI_API_KEYS:
-        print("[ImageGen] GEMINI_API_KEYS not configured - skipping Imagen 3.")
+        print("[ImageGen] GEMINI_API_KEYS not configured - skipping Gemini API.")
         return None
 
-    imagen_prompt = _build_imagen_prompt(topic, text)
+    prompt = _build_image_prompt(topic, text)
     keys = list(GEMINI_API_KEYS)
     random.shuffle(keys)
 
-    # Try official google-genai SDK
+    # 1) google-genai SDK
     try:
         from google import genai
         from google.genai import types
-        for key in keys:
-            try:
-                print(f"[ImageGen] Trying Imagen 3 via SDK (key ...{key[-4:]})...")
-                client = genai.Client(api_key=key)
-                result = client.models.generate_images(
-                    model="imagen-3.0-generate-002",
-                    prompt=imagen_prompt,
-                    config=types.GenerateImagesConfig(
-                        number_of_images=1,
-                        aspect_ratio="16:9",
-                        output_mime_type="image/jpeg",
-                    ),
-                )
-                if result and hasattr(result, "generated_images") and result.generated_images:
-                    img_bytes = result.generated_images[0].image.image_bytes
-                    print(f"[ImageGen] Imagen 3 SDK generated! Size: {len(img_bytes)//1024}KB")
-                    return img_bytes
-            except Exception as sdk_e:
-                print(f"[ImageGen] SDK error (key ...{key[-4:]}): {sdk_e}")
     except ImportError as ie:
         print(f"[ImageGen] google-genai not installed: {ie}")
+    else:
+        for key in keys:
+            for model in _GEMINI_IMAGE_MODELS:
+                try:
+                    print(f"[ImageGen] Trying Gemini image model {model} via SDK (key ...{key[-4:]})...")
+                    client = genai.Client(api_key=key)
+                    result = client.models.generate_content(
+                        model=model,
+                        contents=prompt,
+                        config=types.GenerateContentConfig(
+                            response_modalities=["TEXT", "IMAGE"],
+                        ),
+                    )
+                    for part in result.candidates[0].content.parts:
+                        if part.inline_data is not None and part.inline_data.data:
+                            img_bytes = part.inline_data.data
+                            print(f"[ImageGen] Gemini {model} SDK generated! Size: {len(img_bytes)//1024}KB")
+                            return img_bytes
+                except Exception as sdk_e:
+                    print(f"[ImageGen] SDK error ({model}, key ...{key[-4:]}): {str(sdk_e)[:200]}")
 
-    # Fallback: REST API endpoints
-    models = [
-        "imagen-3.0-generate-002",
-        "imagen-3.0-generate-001",
-        "imagen-3.0-fast-generate-001",
-    ]
+    # 2) REST API
     for key in keys:
-        for model in models:
+        for model in _GEMINI_IMAGE_MODELS:
             url = (
                 f"https://generativelanguage.googleapis.com/v1beta/models"
-                f"/{model}:predict?key={key}"
+                f"/{model}:generateContent?key={key}"
             )
             payload = {
-                "instances": [{"prompt": imagen_prompt}],
-                "parameters": {"sampleCount": 1, "aspectRatio": "16:9"},
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {"responseModalities": ["TEXT", "IMAGE"]},
             }
             try:
-                print(f"[ImageGen] Trying Imagen 3 REST {model} (key ...{key[-4:]})...")
-                resp = requests.post(url, json=payload, timeout=60)
+                print(f"[ImageGen] Trying Gemini image model {model} via REST (key ...{key[-4:]})...")
+                resp = requests.post(url, json=payload, timeout=90)
                 if resp.status_code == 200:
-                    predictions = resp.json().get("predictions", [])
-                    if predictions and "bytesBase64Encoded" in predictions[0]:
-                        img_bytes = base64.b64decode(predictions[0]["bytesBase64Encoded"])
-                        print(f"[ImageGen] Imagen 3 REST generated! Size: {len(img_bytes)//1024}KB")
-                        return img_bytes
+                    parts = resp.json()["candidates"][0]["content"]["parts"]
+                    for part in parts:
+                        inline = part.get("inlineData", {})
+                        if inline.get("data"):
+                            img_bytes = base64.b64decode(inline["data"])
+                            print(f"[ImageGen] Gemini {model} REST generated! Size: {len(img_bytes)//1024}KB")
+                            return img_bytes
                 else:
                     print(f"[ImageGen] REST {model} ({resp.status_code}): {resp.text[:200]}")
             except Exception as e:
@@ -184,7 +193,8 @@ def generate_image_bytes(post_data: dict) -> bytes | None:
     Generate an HD AI image for a LinkedIn post using Gemini ONLY.
 
     Priority:
-      1. Official Google Gemini API - Imagen 3 (google-genai SDK then REST API)
+      1. Official Gemini API - generateContent with Gemini image models
+         (gemini-2.5-flash-image etc., SDK then REST)
       2. Gemini Web API - Cookie session (gemini-webapi library)
 
     NO Python/Pillow fallback.
@@ -196,10 +206,10 @@ def generate_image_bytes(post_data: dict) -> bytes | None:
 
     print(f"\n[ImageGen] Generating image for: '{topic}'")
 
-    # 1. Official Gemini API (Imagen 3)
+    # 1. Official Gemini API (image generation models)
     img = _try_gemini_api_key(topic, text)
     if img:
-        print(f"[ImageGen] Image ready - Gemini Imagen 3 ({len(img)//1024}KB)\n")
+        print(f"[ImageGen] Image ready - Gemini API ({len(img)//1024}KB)\n")
         return img
 
     # 2. Gemini Web API (cookie session)
@@ -211,6 +221,6 @@ def generate_image_bytes(post_data: dict) -> bytes | None:
     # Both failed - text-only post. NO Pillow/Python card ever.
     print(
         "[ImageGen] Both Gemini sources failed. Post will be TEXT-ONLY.\n"
-        "[ImageGen] Verify GEMINI_API_KEY and GEMINI_COOKIES in GitHub Secrets.\n"
+        "[ImageGen] Verify GEMINI_API_KEY(s) and GEMINI_COOKIES in GitHub Secrets.\n"
     )
     return None
