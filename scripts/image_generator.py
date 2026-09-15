@@ -245,7 +245,7 @@ def _try_pillow_card(post_data: dict) -> bytes | None:
     buf = io.BytesIO()
     img.convert("RGB").save(buf, format="JPEG", quality=95, optimize=True)
     size_kb = buf.tell() // 1024
-    print(f"[ImageGen] ✅ Pillow card generated! Size: {size_kb}KB (1200×627, {topic})")
+    print(f"[ImageGen] Pillow card generated! Size: {size_kb}KB (1200x627, {topic})")
     return buf.getvalue()
 
 
@@ -377,23 +377,6 @@ def _try_gemini_api_key(topic: str, text: str) -> bytes | None:
     return None
 
 
-def _try_pollinations(prompt: str) -> bytes | None:
-    """AI image fallback using clean English visual prompt."""
-    encoded = urllib.parse.quote(prompt, safe="")
-    seed    = int(time.time()) % 99999
-    url     = f"https://image.pollinations.ai/prompt/{encoded}?width=1200&height=627&model=flux&nologo=true&seed={seed}"
-    try:
-        print(f"[ImageGen] Trying AI fallback (seed={seed})...")
-        resp = requests.get(url, timeout=60)
-        if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("image"):
-            size_kb = len(resp.content) // 1024
-            print(f"[ImageGen] ✅ AI fallback image generated! Size: {size_kb}KB")
-            return resp.content
-    except Exception as e:
-        print(f"[ImageGen] AI fallback error: {e}")
-    return None
-
-
 def _build_prompt(topic: str, text: str = "") -> str:
     """Build the conversational prompt for Gemini Web chat."""
     prompt = (
@@ -410,33 +393,38 @@ def _build_prompt(topic: str, text: str = "") -> str:
 # ─────────────────────────────────────────────────────────────
 def generate_image_bytes(post_data: dict) -> bytes | None:
     """
-    Generate an AI image for a LinkedIn post strictly using Gemini.
+    Generate an HD image for a LinkedIn post.
+    Priority:
+      1. Official Google Gemini API (Imagen 3)
+      2. Gemini Web API (Cookie session)
+      3. Premium Branded HD Card (Pillow — 0 watermarks, always HD)
     """
     topic  = post_data.get("topic", post_data.get("repo", "post"))
     text   = post_data.get("post", post_data.get("text", ""))
 
     web_prompt = _build_prompt(topic, text)
 
-    print(f"[ImageGen] Generating Gemini image for topic: '{topic}'")
+    print(f"[ImageGen] Generating image for topic: '{topic}'")
 
     # 1. Official Google Gemini API (Imagen 3 via google-genai SDK + REST API)
     img = _try_gemini_api_key(topic, text)
     if img:
         return img
 
-    # 2. Gemini Web API (using cookies session)
+    # 2. Gemini Web API (using cookie session)
     img = _try_gemini_web(web_prompt)
     if img:
         return img
 
-    # 3. Clean HD Fallback so post never fails without an image
-    clean_prompt = f"High-class professional 16:9 infographic poster for LinkedIn about {topic}. {text[:200]}. Sleek dark mode tech UI, 8k studio photo"
-    img = _try_pollinations(clean_prompt)
+    # 3. Premium Branded Dark-Mode HD Card (Pillow) — Clean, professional, 0 watermarks
+    print("[ImageGen] Gemini APIs unavailable, generating premium Pillow HD card...")
+    img = _try_pillow_card(post_data)
     if img:
         return img
 
-    print("[ImageGen] ❌ Image generation failed — post will go text-only.")
+    print("[ImageGen] [FAIL] All image generation options failed — post will go text-only.")
     return None
+
 
 
 
