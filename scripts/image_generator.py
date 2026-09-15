@@ -58,8 +58,6 @@ def _try_gemini_api_key(topic: str, text: str) -> bytes | None:
         return None
 
     prompt = _build_image_prompt(topic, text)
-    keys = list(GEMINI_API_KEYS)
-    random.shuffle(keys)
 
     def failure_state(msg: str) -> str:
         if "denied access" in msg or "PERMISSION_DENIED" in msg:
@@ -74,79 +72,94 @@ def _try_gemini_api_key(topic: str, text: str) -> bytes | None:
         if failure_state(msg) == "quota":
             time.sleep(3)
 
-    # 1) google-genai SDK
-    try:
-        from google import genai
-        from google.genai import types
-    except ImportError as ie:
-        print(f"[ImageGen] google-genai not installed: {ie}")
-    else:
+    def _attempt() -> tuple[bytes | None, bool]:
+        keys = list(GEMINI_API_KEYS)
+        random.shuffle(keys)
+        saw_quota = False
+
+        # 1) google-genai SDK
+        try:
+            from google import genai
+            from google.genai import types
+        except ImportError as ie:
+            print(f"[ImageGen] google-genai not installed: {ie}")
+        else:
+            for key in keys:
+                if key in denied:
+                    continue
+                for model in _GEMINI_IMAGE_MODELS:
+                    try:
+                        print(f"[ImageGen] Trying Gemini image model {model} via SDK (key ...{key[-4:]})...")
+                        client = genai.Client(api_key=key)
+                        result = client.models.generate_content(
+                            model=model,
+                            contents=prompt,
+                            config=types.GenerateContentConfig(
+                                response_modalities=["TEXT", "IMAGE"],
+                            ),
+                        )
+                        for part in result.candidates[0].content.parts:
+                            if part.inline_data is not None and part.inline_data.data:
+                                img_bytes = part.inline_data.data
+                                print(f"[ImageGen] Gemini {model} SDK generated! Size: {len(img_bytes)//1024}KB")
+                                return img_bytes, True
+                    except Exception as sdk_e:
+                        msg = str(sdk_e)[:200]
+                        state = failure_state(msg)
+                        if state == "denied":
+                            print(f"[ImageGen] SDK error ({model}, key ...{key[-4:]}): {msg} (key skipped)")
+                            denied.add(key)
+                            break
+                        if state == "quota":
+                            saw_quota = True
+                        pause_on_quota(msg)
+                        print(f"[ImageGen] SDK error ({model}, key ...{key[-4:]}): {msg}")
+
+        # 2) REST API
         for key in keys:
             if key in denied:
                 continue
             for model in _GEMINI_IMAGE_MODELS:
+                url = (
+                    f"https://generativelanguage.googleapis.com/v1beta/models"
+                    f"/{model}:generateContent?key={key}"
+                )
+                payload = {
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {"responseModalities": ["TEXT", "IMAGE"]},
+                }
                 try:
-                    print(f"[ImageGen] Trying Gemini image model {model} via SDK (key ...{key[-4:]})...")
-                    client = genai.Client(api_key=key)
-                    result = client.models.generate_content(
-                        model=model,
-                        contents=prompt,
-                        config=types.GenerateContentConfig(
-                            response_modalities=["TEXT", "IMAGE"],
-                        ),
-                    )
-                    for part in result.candidates[0].content.parts:
-                        if part.inline_data is not None and part.inline_data.data:
-                            img_bytes = part.inline_data.data
-                            print(f"[ImageGen] Gemini {model} SDK generated! Size: {len(img_bytes)//1024}KB")
-                            return img_bytes
-                except Exception as sdk_e:
-                    msg = str(sdk_e)[:200]
-                    state = failure_state(msg)
-                    if state == "denied":
-                        print(f"[ImageGen] SDK error ({model}, key ...{key[-4:]}): {msg} (key skipped)")
+                    print(f"[ImageGen] Trying Gemini image model {model} via REST (key ...{key[-4:]})...")
+                    resp = requests.post(url, json=payload, timeout=90)
+                    if resp.status_code == 200:
+                        parts = resp.json()["candidates"][0]["content"]["parts"]
+                        for part in parts:
+                            inline = part.get("inlineData", {})
+                            if inline.get("data"):
+                                img_bytes = base64.b64decode(inline["data"])
+                                print(f"[ImageGen] Gemini {model} REST generated! Size: {len(img_bytes)//1024}KB")
+                                return img_bytes, True
+                    elif resp.status_code == 403:
+                        print(f"[ImageGen] REST {model} (403, key skipped): {resp.text[:150]}")
                         denied.add(key)
                         break
-                    pause_on_quota(msg)
-                    print(f"[ImageGen] SDK error ({model}, key ...{key[-4:]}): {msg}")
+                    elif resp.status_code == 429:
+                        saw_quota = True
+                        print(f"[ImageGen] REST {model} (429 quota): {resp.text[:150]}")
+                        time.sleep(3)
+                    else:
+                        print(f"[ImageGen] REST {model} ({resp.status_code}): {resp.text[:200]}")
+                except Exception as e:
+                    print(f"[ImageGen] REST error ({model}): {e}")
 
-    # 2) REST API
-    for key in keys:
-        if key in denied:
-            continue
-        for model in _GEMINI_IMAGE_MODELS:
-            url = (
-                f"https://generativelanguage.googleapis.com/v1beta/models"
-                f"/{model}:generateContent?key={key}"
-            )
-            payload = {
-                "contents": [{"parts": [{"text": prompt}]}],
-                "generationConfig": {"responseModalities": ["TEXT", "IMAGE"]},
-            }
-            try:
-                print(f"[ImageGen] Trying Gemini image model {model} via REST (key ...{key[-4:]})...")
-                resp = requests.post(url, json=payload, timeout=90)
-                if resp.status_code == 200:
-                    parts = resp.json()["candidates"][0]["content"]["parts"]
-                    for part in parts:
-                        inline = part.get("inlineData", {})
-                        if inline.get("data"):
-                            img_bytes = base64.b64decode(inline["data"])
-                            print(f"[ImageGen] Gemini {model} REST generated! Size: {len(img_bytes)//1024}KB")
-                            return img_bytes
-                elif resp.status_code == 403:
-                    print(f"[ImageGen] REST {model} (403, key skipped): {resp.text[:150]}")
-                    denied.add(key)
-                    break
-                elif resp.status_code == 429:
-                    print(f"[ImageGen] REST {model} (429 quota): {resp.text[:150]}")
-                    time.sleep(3)
-                else:
-                    print(f"[ImageGen] REST {model} ({resp.status_code}): {resp.text[:200]}")
-            except Exception as e:
-                print(f"[ImageGen] REST error ({model}): {e}")
+        return None, saw_quota
 
-    return None
+    img, saw_quota = _attempt()
+    if img is None and saw_quota:
+        print("[ImageGen] All keys quota-limited on first pass. Waiting 45s then retrying once...")
+        time.sleep(45)
+        img, _ = _attempt()
+    return img
 
 
 # ─────────────────────────────────────────────────────────────
