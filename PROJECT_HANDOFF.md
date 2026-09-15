@@ -89,19 +89,15 @@ Every post follows:
 ## Image Generation System: image_generator.py
 
 ### Priority Waterfall
-1. **Gemini Web API** (primary) — AI-generated photo-realistic image
+1. **Gemini Web API** (primary) — AI-generated photo-realistic image via cookie session
    - Uses `GEMINI_COOKIES` secret (JSON with `__Secure-1PSID` and `__Secure-1PSIDTS`)
    - Library: `gemini-webapi`
-   - Forces HD: appends `=s2048` to Google CDN URLs
-2. **Pillow HD Card** (fallback 1) — 1200x627 premium dark-mode branded card
-   - Instant, no API needed, always works
-   - Glassmorphism design, gradient background, Inter font, topic-specific colors
-   - 6 color themes: GHL (green), AI (purple), CRM (teal), Funnel (gold), Full-Stack (blue), Robotics (orange)
-3. **Pollinations.ai** (fallback 2) — last resort free AI image
+2. **Gemini REST API** (secondary) — Official Google Gemini API (Imagen) using API keys (`GEMINI_API_KEY`)
+3. **AI Image Fallback** — Generates image strictly via AI prompt matching post context (No Python code cards)
 
 ### Image Prompt
-The Gemini prompt uses 100% exact user words:
-The prompt sends the full post text + asks for a "professional Attractive" LinkedIn image that will increase connections.
+The Gemini prompt uses 100% exact user instructions:
+Sends full post text + asks for high-class professional attractive image for LinkedIn to maximize connections.
 
 ---
 

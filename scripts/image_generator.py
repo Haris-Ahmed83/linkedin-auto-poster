@@ -249,56 +249,96 @@ def _try_pillow_card(post_data: dict) -> bytes | None:
     return buf.getvalue()
 
 
-# ─────────────────────────────────────────────────────────────
-#  Primary: Gemini Web API Image Generation (via cookie session)
-# ─────────────────────────────────────────────────────────────
-def _try_gemini_image(prompt: str) -> bytes | None:
+def _try_gemini_web(prompt: str) -> bytes | None:
     """
-    Generate HD image via official Gemini API (Imagen 3) using API keys.
-    This eliminates the cookie expiration issue completely.
+    Generate HD image via Gemini Web API using cookie authentication.
+    """
+    cookies_json = os.environ.get("GEMINI_COOKIES")
+    if not cookies_json:
+        print("[ImageGen] GEMINI_COOKIES env var not set — skipping Gemini Web.")
+        return None
+
+    try:
+        cookies = json.loads(cookies_json)
+        psid = cookies.get("__Secure-1PSID")
+        psidts = cookies.get("__Secure-1PSIDTS")
+        if not psid or not psidts:
+            print("[ImageGen] Missing __Secure-1PSID or __Secure-1PSIDTS in GEMINI_COOKIES.")
+            return None
+    except Exception as e:
+        print(f"[ImageGen] Failed to parse GEMINI_COOKIES: {e}")
+        return None
+
+    async def _async_gen():
+        from gemini_webapi import GeminiClient
+        client = GeminiClient(secure_1psid=psid, secure_1psidts=psidts)
+        await client.init(timeout=30)
+        chat = client.start_chat()
+        response = await chat.send_message(prompt)
+        if not response.images:
+            print("[ImageGen] Gemini Web returned no images.")
+            return None
+        for img in response.images:
+            try:
+                dl = await img.client.get(img.url)
+                if dl.status_code == 200:
+                    data = dl.content
+                    size_kb = len(data) // 1024
+                    print(f"[ImageGen] ✅ Gemini Web HD image generated! Size: {size_kb}KB")
+                    return data
+            except Exception as e:
+                print(f"[ImageGen] Failed to download Gemini Web image: {e}")
+        return None
+
+    try:
+        print("[ImageGen] Requesting image from Gemini Web API...")
+        return asyncio.run(_async_gen())
+    except Exception as e:
+        print(f"[ImageGen] Gemini Web error: {e}")
+        return None
+
+
+def _try_gemini_api_key(prompt: str) -> bytes | None:
+    """
+    Generate HD image via official Gemini API using API keys.
     """
     if not GEMINI_API_KEYS:
-        print("[ImageGen] GEMINI_API_KEYS not set — skipping Gemini Image Gen.")
+        print("[ImageGen] GEMINI_API_KEYS not set — skipping Gemini API key.")
         return None
 
     import random
-    key = random.choice(GEMINI_API_KEYS)
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key={key}"
-    
-    payload = {
-        "instances": [
-            {"prompt": prompt}
-        ],
-        "parameters": {
-            "sampleCount": 1,
-            "aspectRatio": "16:9"
+    for key in GEMINI_API_KEYS:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key={key}"
+        payload = {
+            "instances": [
+                {"prompt": prompt}
+            ],
+            "parameters": {
+                "sampleCount": 1,
+                "aspectRatio": "16:9"
+            }
         }
-    }
-    
-    try:
-        print("[ImageGen] Requesting image from Gemini Imagen 3 API...")
-        resp = requests.post(url, json=payload, timeout=60)
-        if resp.status_code == 200:
-            data = resp.json()
-            b64_img = data["predictions"][0]["bytesBase64Encoded"]
-            img_bytes = base64.b64decode(b64_img)
-            size_kb = len(img_bytes) // 1024
-            print(f"[ImageGen] ✅ Gemini HD image generated! Size: {size_kb}KB")
-            return img_bytes
-        else:
-            print(f"[ImageGen] Gemini API failed ({resp.status_code}): {resp.text[:200]}")
-    except Exception as e:
-        print(f"[ImageGen] Gemini API request error: {e}")
+        
+        try:
+            print("[ImageGen] Requesting image from Gemini Imagen API...")
+            resp = requests.post(url, json=payload, timeout=45)
+            if resp.status_code == 200:
+                data = resp.json()
+                b64_img = data["predictions"][0]["bytesBase64Encoded"]
+                img_bytes = base64.b64decode(b64_img)
+                size_kb = len(img_bytes) // 1024
+                print(f"[ImageGen] ✅ Gemini API Key image generated! Size: {size_kb}KB")
+                return img_bytes
+            else:
+                print(f"[ImageGen] Gemini API failed ({resp.status_code}): {resp.text[:200]}")
+        except Exception as e:
+            print(f"[ImageGen] Gemini API request error: {e}")
     
     return None
 
 
-
-# ─────────────────────────────────────────────────────────────
-#  Fallback 1: Pillow branded card (instant, no API)
-# ─────────────────────────────────────────────────────────────
-def _try_pollinations(prompt):
-    """Last-resort fallback: Pollinations.ai free image generation."""
+def _try_pollinations(prompt: str) -> bytes | None:
+    """Fallback AI image generator using exact prompt."""
     encoded = urllib.parse.quote(prompt, safe="")
     seed    = int(time.time()) % 99999
     urls = [
@@ -307,52 +347,14 @@ def _try_pollinations(prompt):
     ]
     for url in urls:
         try:
-            print(f"[ImageGen] Trying Pollinations (seed={seed})...")
+            print(f"[ImageGen] Trying AI image fallback (seed={seed})...")
             resp = requests.get(url, timeout=90)
             if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("image"):
                 size_kb = len(resp.content) // 1024
-                print(f"[ImageGen] Pollinations returned {size_kb}KB")
+                print(f"[ImageGen] AI image returned {size_kb}KB")
                 return resp.content
         except Exception as e:
-            print(f"[ImageGen] Pollinations error: {e}")
-    return None
-
-
-# ─────────────────────────────────────────────────────────────
-#  Public entry point
-# ─────────────────────────────────────────────────────────────
-def generate_image_bytes(post_data):
-    """
-    Generate a professional HD image for a LinkedIn post.
-    Priority:
-      1. Gemini 2.0 Flash  — AI-generated photo-realistic images (preferred)
-      2. Pillow HD card     — instant branded fallback, no API needed
-      3. Pollinations       — last resort
-    """
-    topic  = post_data.get("topic", post_data.get("repo", "post"))
-    text   = post_data.get("post", post_data.get("text", ""))
-    prompt = _build_prompt(topic, text)
-
-    print(f"[ImageGen] Generating image for: '{topic}'")
-    print(f"[ImageGen] Prompt: {prompt[:120]}...")
-
-    # 1. Gemini — primary, photo-realistic AI images
-    img = _try_gemini_image(prompt)
-    if img:
-        return img
-
-    # 2. Pillow card — instant fallback (if Gemini rate-limited)
-    print("[ImageGen] Gemini unavailable, falling back to Pillow card...")
-    img = _try_pillow_card(post_data)
-    if img:
-        return img
-
-    # 3. Pollinations — last resort
-    img = _try_pollinations(prompt)
-    if img:
-        return img
-
-    print("[ImageGen] ❌ All image providers failed — post will go text-only.")
+            print(f"[ImageGen] AI fallback error: {e}")
     return None
 
 
@@ -365,6 +367,45 @@ def _build_prompt(topic: str, text: str = "") -> str:
         f"require ho to poch lana"
     )
     return prompt
+
+
+# ─────────────────────────────────────────────────────────────
+#  Public entry point
+# ─────────────────────────────────────────────────────────────
+def generate_image_bytes(post_data: dict) -> bytes | None:
+    """
+    Generate an AI image for a LinkedIn post strictly using Gemini / AI generation.
+    Priority:
+      1. Gemini Web API (via cookies session)
+      2. Gemini REST API (via API keys)
+      3. AI Model Fallback (using Gemini prompt)
+    """
+    topic  = post_data.get("topic", post_data.get("repo", "post"))
+    text   = post_data.get("post", post_data.get("text", ""))
+    prompt = _build_prompt(topic, text)
+
+    print(f"[ImageGen] Generating Gemini image for: '{topic}'")
+    print(f"[ImageGen] Prompt: {prompt[:120]}...")
+
+    # 1. Gemini Web API (preferred)
+    img = _try_gemini_web(prompt)
+    if img:
+        return img
+
+    # 2. Gemini API Key
+    img = _try_gemini_api_key(prompt)
+    if img:
+        return img
+
+    # 3. AI Model Fallback (uses prompt, no Python Pillow graphics)
+    print("[ImageGen] Gemini unavailable, generating via AI image model fallback...")
+    img = _try_pollinations(prompt)
+    if img:
+        return img
+
+    print("[ImageGen] ❌ Image generation failed — post will go text-only.")
+    return None
+
 
 
 
