@@ -1,350 +1,88 @@
 import asyncio
 import base64
-import io
 import json
 import os
-import time
-import textwrap
-import urllib.parse
-import urllib.request
+import random
 import requests
-from config import GEMINI_API_KEYS, HF_TOKEN
-
-
-
-
-# ─────────────────────────────────────────────────────────────
-#  Topic → visual style map
-# ─────────────────────────────────────────────────────────────
-TOPIC_STYLES = {
-    "ghl": {
-        "bg_top":   (8, 20, 35),
-        "bg_bot":   (5, 45, 25),
-        "accent":   (0, 220, 100),
-        "bar":      (0, 180, 80),
-        "label":    "GO HIGH LEVEL",
-        "icon":     "⚡",
-    },
-    "ai": {
-        "bg_top":   (10, 5, 30),
-        "bg_bot":   (20, 10, 60),
-        "accent":   (139, 92, 246),
-        "bar":      (99, 60, 220),
-        "label":    "AI AUTOMATIONS",
-        "icon":     "🤖",
-    },
-    "crm": {
-        "bg_top":   (5, 18, 40),
-        "bg_bot":   (5, 35, 25),
-        "accent":   (34, 197, 94),
-        "bar":      (16, 160, 70),
-        "label":    "CRM & SALES",
-        "icon":     "📈",
-    },
-    "funnel": {
-        "bg_top":   (20, 10, 5),
-        "bg_bot":   (40, 20, 5),
-        "accent":   (251, 191, 36),
-        "bar":      (200, 150, 20),
-        "label":    "FUNNELS",
-        "icon":     "🎯",
-    },
-    "full": {
-        "bg_top":   (5, 10, 30),
-        "bg_bot":   (15, 5, 40),
-        "accent":   (56, 189, 248),
-        "bar":      (30, 140, 200),
-        "label":    "FULL-STACK DEV",
-        "icon":     "💻",
-    },
-    "robot": {
-        "bg_top":   (10, 10, 10),
-        "bg_bot":   (5, 25, 35),
-        "accent":   (249, 115, 22),
-        "bar":      (200, 80, 10),
-        "label":    "ROBOTICS",
-        "icon":     "🦾",
-    },
-}
-
-
-def _pick_style(topic: str) -> dict:
-    t = topic.lower()
-    if "ghl" in t or "gohigh" in t:
-        return TOPIC_STYLES["ghl"]
-    if "ai" in t or "automat" in t:
-        return TOPIC_STYLES["ai"]
-    if "crm" in t or "sales" in t or "pipeline" in t:
-        return TOPIC_STYLES["crm"]
-    if "funnel" in t or "convers" in t:
-        return TOPIC_STYLES["funnel"]
-    if "full" in t or "stack" in t:
-        return TOPIC_STYLES["full"]
-    if "robot" in t or "hardware" in t:
-        return TOPIC_STYLES["robot"]
-    return TOPIC_STYLES["ai"]   # default
-
-
-def _get_font(url: str, size: int):
-    """Download a TTF font and return a PIL ImageFont, fall back to default."""
-    try:
-        from PIL import ImageFont
-        data = urllib.request.urlopen(url, timeout=10).read()
-        return ImageFont.truetype(io.BytesIO(data), size)
-    except Exception:
-        from PIL import ImageFont
-        try:
-            return ImageFont.load_default(size=size)
-        except TypeError:
-            return ImageFont.load_default()
+from config import GEMINI_API_KEYS
 
 
 # ─────────────────────────────────────────────────────────────
-#  Primary: Pillow HD card generator
+#  Prompt builders
 # ─────────────────────────────────────────────────────────────
-def _try_pillow_card(post_data: dict) -> bytes | None:
-    """
-    Generates a premium 1200×627 dark-mode text-card image using Pillow.
-    No API calls required — instant, always works, always HD.
-    """
-    try:
-        from PIL import Image, ImageDraw, ImageFont
-    except ImportError:
-        print("[ImageGen] Pillow not installed, skipping card generator.")
-        return None
-
-    topic = post_data.get("topic", post_data.get("repo", "Technology"))
-    text  = post_data.get("post", post_data.get("text", ""))
-
-    # ── Pick the hook line (first non-empty line) ──────────────
-    hook = ""
-    for line in text.split("\n"):
-        line = line.strip()
-        if line and not line.startswith("#"):
-            hook = line
-            break
-    if not hook:
-        hook = topic
-
-    # ── Strip emoji from hook for cleaner card rendering ──────
-    import re
-    hook_clean = re.sub(r'[^\x00-\x7F]+', '', hook).strip(" :-.")
-    if len(hook_clean) < 8:
-        hook_clean = hook  # keep original if stripping removes too much
-
-    style  = _pick_style(topic)
-    W, H   = 1200, 627
-
-    # ── Canvas + vertical gradient ─────────────────────────────
-    img  = Image.new("RGB", (W, H), style["bg_top"])
-    draw = ImageDraw.Draw(img, "RGBA")
-
-    for y in range(H):
-        r_ratio = y / H
-        r = int(style["bg_top"][0] + (style["bg_bot"][0] - style["bg_top"][0]) * r_ratio)
-        g = int(style["bg_top"][1] + (style["bg_bot"][1] - style["bg_top"][1]) * r_ratio)
-        b = int(style["bg_top"][2] + (style["bg_bot"][2] - style["bg_top"][2]) * r_ratio)
-        draw.line([(0, y), (W, y)], fill=(r, g, b))
-
-    # ── Glassmorphism card ─────────────────────────────────────
-    card_x1, card_y1, card_x2, card_y2 = 60, 60, W - 60, H - 60
-    glass_overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    glass_draw    = ImageDraw.Draw(glass_overlay)
-    glass_draw.rounded_rectangle(
-        [card_x1, card_y1, card_x2, card_y2],
-        radius=24,
-        fill=(255, 255, 255, 12),
-        outline=(*style["accent"], 60),
-        width=1,
-    )
-    img.paste(Image.alpha_composite(Image.new("RGBA", (W, H), (0, 0, 0, 0)), glass_overlay), mask=glass_overlay.split()[3])
-
-    # ── Accent top bar ─────────────────────────────────────────
-    bar_y = card_y1 + 2
-    draw.rounded_rectangle(
-        [card_x1 + 2, bar_y, card_x1 + 2 + 200, bar_y + 5],
-        radius=3,
-        fill=style["bar"],
+def _build_prompt(topic: str, text: str = "") -> str:
+    """Rich conversational prompt for Gemini Web API (chat interface)."""
+    return (
+        f"Create a stunning, professional LinkedIn post image for the following content:\n\n"
+        f"TOPIC: {topic}\n\n"
+        f"POST TEXT:\n{text[:500]}\n\n"
+        f"IMAGE REQUIREMENTS:\n"
+        f"- 16:9 landscape format, 1200x627px\n"
+        f"- Dark premium background (deep navy, charcoal, or midnight black)\n"
+        f"- Vibrant neon accent colors (electric blue, purple, or green glows)\n"
+        f"- Futuristic tech/AI aesthetic with abstract data visualization and network nodes\n"
+        f"- Cinematic studio lighting, 8K hyper-realistic render quality\n"
+        f"- NO text overlay on the image\n"
+        f"- Style: modern, corporate-tech, highly shareable on LinkedIn\n\n"
+        f"Generate ONLY the image - no explanation needed."
     )
 
-    # ── Decorative circles (background depth) ─────────────────
-    for cx, cy, cr, alpha in [
-        (W - 120, 100, 200, 18),
-        (150, H - 100, 150, 12),
-        (W // 2, H // 2, 80, 8),
-    ]:
-        circle_overlay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-        circle_draw    = ImageDraw.Draw(circle_overlay)
-        circle_draw.ellipse(
-            [cx - cr, cy - cr, cx + cr, cy + cr],
-            fill=(*style["accent"], alpha),
-        )
-        img.paste(Image.alpha_composite(Image.new("RGBA", (W, H), (0, 0, 0, 0)), circle_overlay), mask=circle_overlay.split()[3])
 
-    # ── Fonts ──────────────────────────────────────────────────
-    INTER_BOLD = "https://github.com/google/fonts/raw/main/ofl/inter/static/Inter-Bold.ttf"
-    INTER_REG  = "https://github.com/google/fonts/raw/main/ofl/inter/static/Inter-Regular.ttf"
-    INTER_MED  = "https://github.com/google/fonts/raw/main/ofl/inter/static/Inter-Medium.ttf"
-
-    font_label  = _get_font(INTER_MED, 22)
-    font_hook   = _get_font(INTER_BOLD, 62)
-    font_sub    = _get_font(INTER_REG, 28)
-    font_brand  = _get_font(INTER_MED, 24)
-
-    # ── Label (topic pill) ─────────────────────────────────────
-    label_text = style["label"]
-    label_x, label_y = card_x1 + 40, card_y1 + 34
-    lw = draw.textlength(label_text, font=font_label) if hasattr(draw, 'textlength') else 140
-    pill_pad = 14
-    draw.rounded_rectangle(
-        [label_x - pill_pad, label_y - 6, label_x + lw + pill_pad, label_y + 30],
-        radius=20,
-        fill=(*style["accent"], 30),
-        outline=(*style["accent"], 120),
-        width=1,
-    )
-    draw.text((label_x, label_y), label_text, font=font_label, fill=(*style["accent"], 230))
-
-    # ── Hook text (auto-wrapped) ───────────────────────────────
-    max_chars = 38
-    lines = textwrap.wrap(hook_clean, width=max_chars)[:3]  # max 3 lines
-    hook_y = card_y1 + 110
-    line_h = 80
-    for line in lines:
-        draw.text((card_x1 + 40, hook_y), line, font=font_hook, fill=(245, 248, 255))
-        hook_y += line_h
-
-    # ── Accent divider ─────────────────────────────────────────
-    div_y = hook_y + 20
-    draw.line([(card_x1 + 40, div_y), (card_x1 + 240, div_y)], fill=style["accent"], width=3)
-
-    # ── Sub-label ─────────────────────────────────────────────
-    draw.text(
-        (card_x1 + 40, div_y + 20),
-        "Insight for Builders & Operators",
-        font=font_sub,
-        fill=(180, 190, 210),
+def _build_imagen_prompt(topic: str, text: str = "") -> str:
+    """Optimized prompt for Google Imagen 3 official API."""
+    return (
+        f"A hyper-realistic, professional 16:9 LinkedIn post cover image about: {topic}. "
+        f"Content summary: {text[:250]}. "
+        f"Visual style: sleek dark-mode UI with glowing neon elements, "
+        f"abstract data flow network visualization, deep navy/charcoal background, "
+        f"electric blue and purple accent glows, cinematic studio lighting, "
+        f"8K resolution, ultra-premium corporate tech branding. No text, no watermarks."
     )
 
-    # ── Author branding bottom-right ───────────────────────────
-    brand = "Haris Ahmed  -  linkedin.com/in/harisahmed"
-    brand_w = draw.textlength(brand, font=font_brand) if hasattr(draw, 'textlength') else 240
-    draw.text(
-        (card_x2 - brand_w - 20, card_y2 - 38),
-        brand,
-        font=font_brand,
-        fill=(140, 160, 190),
-    )
 
-    # ── Accent dot cluster bottom-right ───────────────────────
-    for i in range(3):
-        dot_x = card_x2 - 60 - i * 20
-        draw.ellipse([dot_x, card_y1 + 30, dot_x + 8, card_y1 + 38], fill=(*style["accent"], 160 - i * 40))
-
-    # ── Render to bytes ───────────────────────────────────────
-    buf = io.BytesIO()
-    img.convert("RGB").save(buf, format="JPEG", quality=95, optimize=True)
-    size_kb = buf.tell() // 1024
-    print(f"[ImageGen] Pillow card generated! Size: {size_kb}KB (1200x627, {topic})")
-    return buf.getvalue()
-
-
-def _try_gemini_web(prompt: str) -> bytes | None:
-    """
-    Generate HD image via Gemini Web API using cookie authentication.
-    """
-    cookies_json = os.environ.get("GEMINI_COOKIES")
-    if not cookies_json:
-        print("[ImageGen] GEMINI_COOKIES env var not set — skipping Gemini Web.")
-        return None
-
-    try:
-        cookies = json.loads(cookies_json)
-        psid = cookies.get("__Secure-1PSID")
-        psidts = cookies.get("__Secure-1PSIDTS")
-        if not psid or not psidts:
-            print("[ImageGen] Missing __Secure-1PSID or __Secure-1PSIDTS in GEMINI_COOKIES.")
-            return None
-    except Exception as e:
-        print(f"[ImageGen] Failed to parse GEMINI_COOKIES: {e}")
-        return None
-
-    async def _async_gen():
-        from gemini_webapi import GeminiClient
-        client = GeminiClient(secure_1psid=psid, secure_1psidts=psidts)
-        await client.init(timeout=30)
-        chat = client.start_chat()
-        response = await chat.send_message(prompt)
-        if not response.images:
-            print("[ImageGen] Gemini Web returned no images.")
-            return None
-        for img in response.images:
-            try:
-                dl = await img.client.get(img.url)
-                if dl.status_code == 200:
-                    data = dl.content
-                    size_kb = len(data) // 1024
-                    print(f"[ImageGen] ✅ Gemini Web HD image generated! Size: {size_kb}KB")
-                    return data
-            except Exception as e:
-                print(f"[ImageGen] Failed to download Gemini Web image: {e}")
-        return None
-
-    try:
-        print("[ImageGen] Requesting image from Gemini Web API...")
-        return asyncio.run(_async_gen())
-    except Exception as e:
-        print(f"[ImageGen] Gemini Web error: {e}")
-        return None
-
-
+# ─────────────────────────────────────────────────────────────
+#  Method 1: Official Google Gemini API - Imagen 3
+# ─────────────────────────────────────────────────────────────
 def _try_gemini_api_key(topic: str, text: str) -> bytes | None:
     """
-    Generate HD image via official Google Gemini API (Imagen 3) using API keys.
-    Tries official google-genai SDK first, then REST API endpoints.
+    Generate HD image via official Google Gemini API (Imagen 3).
+    Tries google-genai SDK first, then falls back to REST API.
     """
     if not GEMINI_API_KEYS:
-        print("[ImageGen] GEMINI_API_KEYS not set — skipping Gemini API Key.")
+        print("[ImageGen] GEMINI_API_KEYS not configured - skipping Imagen 3.")
         return None
 
-    imagen_prompt = (
-        f"A high-class, professional 16:9 infographic poster for a LinkedIn post about {topic}.\n"
-        f"Post summary: {text[:250]}.\n"
-        f"Visual style: Hyper-realistic modern tech illustration, sleek dark mode dashboard UI, glowing flowchart diagrams, 8k resolution, cinematic studio lighting."
-    )
-
-    import random
+    imagen_prompt = _build_imagen_prompt(topic, text)
     keys = list(GEMINI_API_KEYS)
     random.shuffle(keys)
 
-    # 1. Try official google-genai SDK
+    # Try official google-genai SDK
     try:
         from google import genai
         from google.genai import types
         for key in keys:
             try:
-                print(f"[ImageGen] Requesting Imagen 3 image via google-genai SDK (key ending in ...{key[-4:]})...")
+                print(f"[ImageGen] Trying Imagen 3 via SDK (key ...{key[-4:]})...")
                 client = genai.Client(api_key=key)
                 result = client.models.generate_images(
-                    model='imagen-3.0-generate-002',
+                    model="imagen-3.0-generate-002",
                     prompt=imagen_prompt,
                     config=types.GenerateImagesConfig(
                         number_of_images=1,
-                        aspect_ratio='16:9',
-                        output_mime_type='image/jpeg',
-                    )
+                        aspect_ratio="16:9",
+                        output_mime_type="image/jpeg",
+                    ),
                 )
-                if result and hasattr(result, 'generated_images') and result.generated_images:
+                if result and hasattr(result, "generated_images") and result.generated_images:
                     img_bytes = result.generated_images[0].image.image_bytes
-                    size_kb = len(img_bytes) // 1024
-                    print(f"[ImageGen] ✅ Gemini official SDK Imagen 3 image generated! Size: {size_kb}KB")
+                    print(f"[ImageGen] Imagen 3 SDK generated! Size: {len(img_bytes)//1024}KB")
                     return img_bytes
             except Exception as sdk_e:
-                print(f"[ImageGen] google-genai SDK error with key ...{key[-4:]}: {sdk_e}")
-    except Exception as e:
-        print(f"[ImageGen] google-genai SDK import error: {e}")
+                print(f"[ImageGen] SDK error (key ...{key[-4:]}): {sdk_e}")
+    except ImportError as ie:
+        print(f"[ImageGen] google-genai not installed: {ie}")
 
-    # 2. Try REST API endpoints
+    # Fallback: REST API endpoints
     models = [
         "imagen-3.0-generate-002",
         "imagen-3.0-generate-001",
@@ -352,40 +90,98 @@ def _try_gemini_api_key(topic: str, text: str) -> bytes | None:
     ]
     for key in keys:
         for model in models:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:predict?key={key}"
+            url = (
+                f"https://generativelanguage.googleapis.com/v1beta/models"
+                f"/{model}:predict?key={key}"
+            )
             payload = {
                 "instances": [{"prompt": imagen_prompt}],
-                "parameters": {"sampleCount": 1, "aspectRatio": "16:9"}
+                "parameters": {"sampleCount": 1, "aspectRatio": "16:9"},
             }
             try:
-                print(f"[ImageGen] Requesting REST API: {model}...")
-                resp = requests.post(url, json=payload, timeout=45)
+                print(f"[ImageGen] Trying Imagen 3 REST {model} (key ...{key[-4:]})...")
+                resp = requests.post(url, json=payload, timeout=60)
                 if resp.status_code == 200:
-                    data = resp.json()
-                    predictions = data.get("predictions", [])
+                    predictions = resp.json().get("predictions", [])
                     if predictions and "bytesBase64Encoded" in predictions[0]:
-                        b64_img = predictions[0]["bytesBase64Encoded"]
-                        img_bytes = base64.b64decode(b64_img)
-                        size_kb = len(img_bytes) // 1024
-                        print(f"[ImageGen] ✅ Gemini REST API Imagen 3 image generated! Size: {size_kb}KB")
+                        img_bytes = base64.b64decode(predictions[0]["bytesBase64Encoded"])
+                        print(f"[ImageGen] Imagen 3 REST generated! Size: {len(img_bytes)//1024}KB")
                         return img_bytes
                 else:
-                    print(f"[ImageGen] Gemini REST {model} failed ({resp.status_code}): {resp.text[:150]}")
+                    print(f"[ImageGen] REST {model} ({resp.status_code}): {resp.text[:200]}")
             except Exception as e:
-                print(f"[ImageGen] Gemini REST API error: {e}")
+                print(f"[ImageGen] REST error ({model}): {e}")
 
     return None
 
 
-def _build_prompt(topic: str, text: str = "") -> str:
-    """Build the conversational prompt for Gemini Web chat."""
-    prompt = (
-        f"{text}\n\n"
-        f"ma yh post linkdin pa post karna wala ho muja ek professional Atttractive is k lea image bana k do jo ma post kar sako\n"
-        f"is text k sat images high class or attractive ho ma linkdin account pa connection zada karna chata ho is lea agr tuma muj sa kuch\n"
-        f"require ho to poch lana"
-    )
-    return prompt
+# ─────────────────────────────────────────────────────────────
+#  Method 2: Gemini Web API - Cookie Session
+# ─────────────────────────────────────────────────────────────
+def _try_gemini_web(prompt: str) -> bytes | None:
+    """
+    Generate HD image via Gemini Web API using cookie authentication.
+    Requires GEMINI_COOKIES secret with __Secure-1PSID and __Secure-1PSIDTS.
+    """
+    cookies_json = os.environ.get("GEMINI_COOKIES")
+    if not cookies_json:
+        print("[ImageGen] GEMINI_COOKIES not set - skipping Gemini Web API.")
+        return None
+
+    try:
+        cookies = json.loads(cookies_json)
+        psid   = cookies.get("__Secure-1PSID")
+        psidts = cookies.get("__Secure-1PSIDTS")
+        if not psid or not psidts:
+            print("[ImageGen] GEMINI_COOKIES missing required fields.")
+            return None
+    except Exception as e:
+        print(f"[ImageGen] Failed to parse GEMINI_COOKIES: {e}")
+        return None
+
+    async def _async_gen():
+        try:
+            from gemini_webapi import GeminiClient
+        except ImportError:
+            print("[ImageGen] gemini-webapi not installed.")
+            return None
+
+        try:
+            client = GeminiClient(secure_1psid=psid, secure_1psidts=psidts)
+            await client.init(timeout=30)
+            chat = client.start_chat()
+            response = await chat.send_message(prompt)
+
+            if not response.images:
+                print("[ImageGen] Gemini Web returned no images.")
+                return None
+
+            for img_obj in response.images:
+                try:
+                    dl = await img_obj.client.get(img_obj.url)
+                    if dl.status_code == 200:
+                        data = dl.content
+                        # Force HD resolution for Google-hosted images
+                        if "=s" not in img_obj.url:
+                            hd_url = img_obj.url + "=s2048"
+                            dl_hd = await img_obj.client.get(hd_url)
+                            if dl_hd.status_code == 200:
+                                data = dl_hd.content
+                        print(f"[ImageGen] Gemini Web HD image: {len(data)//1024}KB")
+                        return data
+                except Exception as e:
+                    print(f"[ImageGen] Image download error: {e}")
+        except Exception as e:
+            print(f"[ImageGen] Gemini Web session error: {e}")
+
+        return None
+
+    try:
+        print("[ImageGen] Requesting image via Gemini Web API (cookie session)...")
+        return asyncio.run(_async_gen())
+    except Exception as e:
+        print(f"[ImageGen] Gemini Web asyncio error: {e}")
+        return None
 
 
 # ─────────────────────────────────────────────────────────────
@@ -393,43 +189,36 @@ def _build_prompt(topic: str, text: str = "") -> str:
 # ─────────────────────────────────────────────────────────────
 def generate_image_bytes(post_data: dict) -> bytes | None:
     """
-    Generate an HD image for a LinkedIn post.
+    Generate an HD AI image for a LinkedIn post using Gemini ONLY.
+
     Priority:
-      1. Official Google Gemini API (Imagen 3)
-      2. Gemini Web API (Cookie session)
-      3. Premium Branded HD Card (Pillow — 0 watermarks, always HD)
+      1. Official Google Gemini API - Imagen 3 (google-genai SDK then REST API)
+      2. Gemini Web API - Cookie session (gemini-webapi library)
+
+    NO Python/Pillow fallback.
+    If both Gemini methods fail, post is published TEXT-ONLY.
+    Every image is guaranteed to be AI-generated by Gemini.
     """
-    topic  = post_data.get("topic", post_data.get("repo", "post"))
-    text   = post_data.get("post", post_data.get("text", ""))
+    topic = post_data.get("topic", post_data.get("repo", "Technology and AI"))
+    text  = post_data.get("post",  post_data.get("text", ""))
 
-    web_prompt = _build_prompt(topic, text)
+    print(f"\n[ImageGen] Generating image for: '{topic}'")
 
-    print(f"[ImageGen] Generating image for topic: '{topic}'")
-
-    # 1. Official Google Gemini API (Imagen 3 via google-genai SDK + REST API)
+    # 1. Official Gemini API (Imagen 3)
     img = _try_gemini_api_key(topic, text)
     if img:
+        print(f"[ImageGen] Image ready - Gemini Imagen 3 ({len(img)//1024}KB)\n")
         return img
 
-    # 2. Gemini Web API (using cookie session)
-    img = _try_gemini_web(web_prompt)
+    # 2. Gemini Web API (cookie session)
+    img = _try_gemini_web(_build_prompt(topic, text))
     if img:
+        print(f"[ImageGen] Image ready - Gemini Web API ({len(img)//1024}KB)\n")
         return img
 
-    # 3. Premium Branded Dark-Mode HD Card (Pillow) — Clean, professional, 0 watermarks
-    print("[ImageGen] Gemini APIs unavailable, generating premium Pillow HD card...")
-    img = _try_pillow_card(post_data)
-    if img:
-        return img
-
-    print("[ImageGen] [FAIL] All image generation options failed — post will go text-only.")
+    # Both failed - text-only post. NO Pillow/Python card ever.
+    print(
+        "[ImageGen] Both Gemini sources failed. Post will be TEXT-ONLY.\n"
+        "[ImageGen] Verify GEMINI_API_KEY and GEMINI_COOKIES in GitHub Secrets.\n"
+    )
     return None
-
-
-
-
-
-
-
-
-
