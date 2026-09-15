@@ -249,6 +249,52 @@ def _try_pillow_card(post_data: dict) -> bytes | None:
     return buf.getvalue()
 
 
+TOPIC_VISUAL_PROMPTS = {
+    "ghl": "High-end modern corporate agency office setup, green neon lighting accents, sleek CRM dashboard on dual curved monitors, 8k cinematic photo",
+    "ai": "Futuristic dark-mode developer workspace with glowing AI automation nodes and network graphics, ultra-realistic sleek laptop, 8k studio lighting",
+    "crm": "Sleek executive office with glass board showing sales pipeline charts and growth analytics, dramatic cinematic lighting, professional 8k photo",
+    "funnel": "Modern digital strategy desk with 3D glass conversion funnel visualization, gold and dark blue lighting accents, hyper-realistic 8k render",
+    "full": "Clean modern backend developer workstation with dark-mode code editor on wide monitors, ambient workspace lighting, 8k professional photo",
+    "robot": "Advanced robotics engineering laboratory with autonomous robotic arm and glowing circuit boards, 8k cinematic hardware photo",
+}
+
+
+def _get_clean_visual_prompt(topic: str, text: str = "") -> str:
+    """Uses Gemini API to extract a clean 1-sentence English visual scene description, or falls back to topic visual defaults."""
+    if GEMINI_API_KEYS:
+        import random
+        key = random.choice(GEMINI_API_KEYS)
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={key}"
+        payload = {
+            "contents": [{
+                "parts": [{
+                    "text": (
+                        f"Extract a 1-sentence photorealistic English scene description for an AI image generator for a LinkedIn post about '{topic}'. "
+                        f"Post context: '{text[:150]}'. "
+                        f"Describe a sleek, professional, modern tech/business scene (8k resolution, cinematic studio lighting). "
+                        f"Do NOT include text, letters, UI gibberish, or conversational words. Output ONLY the scene description."
+                    )
+                }]
+            }]
+        }
+        try:
+            resp = requests.post(url, json=payload, timeout=12)
+            if resp.status_code == 200:
+                gen_prompt = resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+                if len(gen_prompt) > 10:
+                    print(f"[ImageGen] Clean visual prompt created via Gemini: '{gen_prompt}'")
+                    return gen_prompt
+        except Exception as e:
+            print(f"[ImageGen] Could not generate clean prompt via Gemini API: {e}")
+
+    # Fallback to curated topic visual prompt
+    t = topic.lower()
+    for key, prompt in TOPIC_VISUAL_PROMPTS.items():
+        if key in t:
+            return prompt
+    return TOPIC_VISUAL_PROMPTS["ai"]
+
+
 def _try_gemini_web(prompt: str) -> bytes | None:
     """
     Generate HD image via Gemini Web API using cookie authentication.
@@ -337,24 +383,51 @@ def _try_gemini_api_key(prompt: str) -> bytes | None:
     return None
 
 
-def _try_pollinations(prompt: str) -> bytes | None:
-    """Fallback AI image generator using exact prompt."""
-    encoded = urllib.parse.quote(prompt, safe="")
+def _try_huggingface(prompt: str) -> bytes | None:
+    """Generate 4K studio quality image using Hugging Face FLUX.1 / SDXL models."""
+    if not HF_TOKEN:
+        print("[ImageGen] HF_TOKEN not set — skipping Hugging Face.")
+        return None
+
+    headers = {"Authorization": f"Bearer {HF_TOKEN}"}
+    models = [
+        "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell",
+        "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0",
+    ]
+    payload = {"inputs": prompt}
+    for model_url in models:
+        try:
+            print(f"[ImageGen] Trying Hugging Face model: {model_url.split('/')[-1]}...")
+            resp = requests.post(model_url, headers=headers, json=payload, timeout=45)
+            if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("image"):
+                size_kb = len(resp.content) // 1024
+                print(f"[ImageGen] ✅ Hugging Face HD image generated! Size: {size_kb}KB")
+                return resp.content
+            else:
+                print(f"[ImageGen] HF model returned status {resp.status_code}: {resp.text[:150]}")
+        except Exception as e:
+            print(f"[ImageGen] HF error: {e}")
+    return None
+
+
+def _try_pollinations(visual_prompt: str) -> bytes | None:
+    """AI image generator using clean visual prompt."""
+    encoded = urllib.parse.quote(visual_prompt, safe="")
     seed    = int(time.time()) % 99999
     urls = [
-        f"https://image.pollinations.ai/prompt/{encoded}?width=1200&height=627&model=flux&nologo=true&enhance=true&seed={seed}",
         f"https://image.pollinations.ai/prompt/{encoded}?width=1200&height=627&model=flux&nologo=true&seed={seed}",
+        f"https://image.pollinations.ai/prompt/{encoded}?width=1200&height=627&model=turbo&nologo=true&seed={seed}",
     ]
     for url in urls:
         try:
-            print(f"[ImageGen] Trying AI image fallback (seed={seed})...")
-            resp = requests.get(url, timeout=90)
+            print(f"[ImageGen] Trying AI image generator (seed={seed})...")
+            resp = requests.get(url, timeout=60)
             if resp.status_code == 200 and resp.headers.get("content-type", "").startswith("image"):
                 size_kb = len(resp.content) // 1024
-                print(f"[ImageGen] AI image returned {size_kb}KB")
+                print(f"[ImageGen] ✅ AI HD image generated! Size: {size_kb}KB")
                 return resp.content
         except Exception as e:
-            print(f"[ImageGen] AI fallback error: {e}")
+            print(f"[ImageGen] AI image generator error: {e}")
     return None
 
 
@@ -378,33 +451,41 @@ def generate_image_bytes(post_data: dict) -> bytes | None:
     Priority:
       1. Gemini Web API (via cookies session)
       2. Gemini REST API (via API keys)
-      3. AI Model Fallback (using Gemini prompt)
+      3. Hugging Face FLUX.1 / SDXL (via HF_TOKEN)
+      4. AI Model Generator (using clean visual prompt)
     """
     topic  = post_data.get("topic", post_data.get("repo", "post"))
     text   = post_data.get("post", post_data.get("text", ""))
-    prompt = _build_prompt(topic, text)
+
+    gemini_prompt = _build_prompt(topic, text)
+    clean_visual_prompt = _get_clean_visual_prompt(topic, text)
 
     print(f"[ImageGen] Generating Gemini image for: '{topic}'")
-    print(f"[ImageGen] Prompt: {prompt[:120]}...")
 
-    # 1. Gemini Web API (preferred)
-    img = _try_gemini_web(prompt)
+    # 1. Gemini Web API (using user conversational prompt)
+    img = _try_gemini_web(gemini_prompt)
     if img:
         return img
 
-    # 2. Gemini API Key
-    img = _try_gemini_api_key(prompt)
+    # 2. Gemini API Key (using clean visual prompt)
+    img = _try_gemini_api_key(clean_visual_prompt)
     if img:
         return img
 
-    # 3. AI Model Fallback (uses prompt, no Python Pillow graphics)
-    print("[ImageGen] Gemini unavailable, generating via AI image model fallback...")
-    img = _try_pollinations(prompt)
+    # 3. Hugging Face FLUX.1 (using HF_TOKEN secret)
+    img = _try_huggingface(clean_visual_prompt)
+    if img:
+        return img
+
+    # 4. AI Model Fallback (using clean visual scene prompt)
+    print("[ImageGen] Generating via AI image model fallback...")
+    img = _try_pollinations(clean_visual_prompt)
     if img:
         return img
 
     print("[ImageGen] ❌ Image generation failed — post will go text-only.")
     return None
+
 
 
 
