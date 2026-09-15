@@ -8,36 +8,28 @@ from config import GEMINI_API_KEYS
 
 
 # ─────────────────────────────────────────────────────────────
-#  Prompt builders
+#  Prompt (user's exact verbatim prompt — always used for Gemini)
 # ─────────────────────────────────────────────────────────────
 def _build_prompt(topic: str, text: str = "") -> str:
-    """Rich conversational prompt for Gemini Web API (chat interface)."""
+    """
+    Build the image generation prompt exactly as requested by the user.
+    The user's custom prompt string is sent VERBATIM to Gemini — never
+    replaced or rewritten by any other prompt.
+    """
+    body = (text or topic).strip()
+    if len(body) > 1500:
+        body = body[:1500]
     return (
-        f"Create a stunning, professional LinkedIn post image for the following content:\n\n"
-        f"TOPIC: {topic}\n\n"
-        f"POST TEXT:\n{text[:500]}\n\n"
-        f"IMAGE REQUIREMENTS:\n"
-        f"- 16:9 landscape format, 1200x627px\n"
-        f"- Dark premium background (deep navy, charcoal, or midnight black)\n"
-        f"- Vibrant neon accent colors (electric blue, purple, or green glows)\n"
-        f"- Futuristic tech/AI aesthetic with abstract data visualization and network nodes\n"
-        f"- Cinematic studio lighting, 8K hyper-realistic render quality\n"
-        f"- NO text overlay on the image\n"
-        f"- Style: modern, corporate-tech, highly shareable on LinkedIn\n\n"
-        f"Generate ONLY the image - no explanation needed."
+        f"{body}\n\n"
+        f"ma yh post linkdin pa post karna wala ho muja ek professional Atttractive is k lea image bana k do jo ma post kar sako\n"
+        f"is text k sat images high class or attractive ho ma linkdin account pa connection zada karna chata ho is lea agr tuma muj sa kuch\n"
+        f"require ho to poch lana"
     )
 
 
 def _build_imagen_prompt(topic: str, text: str = "") -> str:
-    """Optimized prompt for Google Imagen 3 official API."""
-    return (
-        f"A hyper-realistic, professional 16:9 LinkedIn post cover image about: {topic}. "
-        f"Content summary: {text[:250]}. "
-        f"Visual style: sleek dark-mode UI with glowing neon elements, "
-        f"abstract data flow network visualization, deep navy/charcoal background, "
-        f"electric blue and purple accent glows, cinematic studio lighting, "
-        f"8K resolution, ultra-premium corporate tech branding. No text, no watermarks."
-    )
+    """Same user verbatim prompt for Google Imagen 3 (both SDK and REST)."""
+    return _build_prompt(topic, text)
 
 
 # ─────────────────────────────────────────────────────────────

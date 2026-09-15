@@ -93,14 +93,8 @@ class LinkedInAPI:
                 "shareMediaCategory": "NONE"
             }
 
-        # Organization URNs need a different visibility key than personal profiles
+        # Organization URNs use the newer /v2/posts endpoint
         is_org = "organization" in author_urn
-        visibility = {
-            "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"
-        } if not is_org else {
-            "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC",
-            "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"
-        }
 
         payload = {
             "author": author_urn,
@@ -139,13 +133,22 @@ class LinkedInAPI:
         resp = requests.post(url, headers=self.headers, json=payload)
         if resp.status_code in [200, 201]:
             return resp.json() if resp.content else {"status": "posted"}
+
+        if resp.status_code == 403 and is_org:
+            raise Exception(
+                "Post failed: 403 ACCESS_DENIED on /author. For company-page posts the "
+                "LinkedIn App needs the 'Community Management API' product, the OAuth token "
+                "must include the w_organization_social scope, the author URN must be "
+                "urn:li:organization:<numeric_id>, and your account must be a page admin. "
+                f"Response: {resp.text}"
+            )
         raise Exception(f"Post failed: {resp.status_code} {resp.text}")
 
-    def refresh_token(self, client_id, client_secret):
+    def refresh_token(self, client_id, client_secret, refresh_token):
         url = "https://www.linkedin.com/oauth/v2/accessToken"
         data = {
             "grant_type": "refresh_token",
-            "refresh_token": self.access_token,
+            "refresh_token": refresh_token,
             "client_id": client_id,
             "client_secret": client_secret,
         }
