@@ -3,6 +3,7 @@ import base64
 import json
 import os
 import random
+import time
 import requests
 from config import GEMINI_API_KEYS
 
@@ -50,6 +51,7 @@ def _try_gemini_api_key(topic: str, text: str) -> bytes | None:
     Generate an image via the official Gemini API using generateContent and
     Gemini's native image models. Works with normal (free-tier) API keys.
     Tries google-genai SDK first, then REST API, across all configured keys.
+    Denied keys are skipped; quota-limited keys get a short pause between attempts.
     """
     if not GEMINI_API_KEYS:
         print("[ImageGen] GEMINI_API_KEYS not configured - skipping Gemini API.")
@@ -59,6 +61,19 @@ def _try_gemini_api_key(topic: str, text: str) -> bytes | None:
     keys = list(GEMINI_API_KEYS)
     random.shuffle(keys)
 
+    def failure_state(msg: str) -> str:
+        if "denied access" in msg or "PERMISSION_DENIED" in msg:
+            return "denied"
+        if "RESOURCE_EXHAUSTED" in msg or "Quota" in msg or "429" in msg:
+            return "quota"
+        return "other"
+
+    denied: set = set()
+
+    def pause_on_quota(msg: str):
+        if failure_state(msg) == "quota":
+            time.sleep(3)
+
     # 1) google-genai SDK
     try:
         from google import genai
@@ -67,6 +82,8 @@ def _try_gemini_api_key(topic: str, text: str) -> bytes | None:
         print(f"[ImageGen] google-genai not installed: {ie}")
     else:
         for key in keys:
+            if key in denied:
+                continue
             for model in _GEMINI_IMAGE_MODELS:
                 try:
                     print(f"[ImageGen] Trying Gemini image model {model} via SDK (key ...{key[-4:]})...")
@@ -84,10 +101,19 @@ def _try_gemini_api_key(topic: str, text: str) -> bytes | None:
                             print(f"[ImageGen] Gemini {model} SDK generated! Size: {len(img_bytes)//1024}KB")
                             return img_bytes
                 except Exception as sdk_e:
-                    print(f"[ImageGen] SDK error ({model}, key ...{key[-4:]}): {str(sdk_e)[:200]}")
+                    msg = str(sdk_e)[:200]
+                    state = failure_state(msg)
+                    if state == "denied":
+                        print(f"[ImageGen] SDK error ({model}, key ...{key[-4:]}): {msg} (key skipped)")
+                        denied.add(key)
+                        break
+                    pause_on_quota(msg)
+                    print(f"[ImageGen] SDK error ({model}, key ...{key[-4:]}): {msg}")
 
     # 2) REST API
     for key in keys:
+        if key in denied:
+            continue
         for model in _GEMINI_IMAGE_MODELS:
             url = (
                 f"https://generativelanguage.googleapis.com/v1beta/models"
@@ -108,6 +134,13 @@ def _try_gemini_api_key(topic: str, text: str) -> bytes | None:
                             img_bytes = base64.b64decode(inline["data"])
                             print(f"[ImageGen] Gemini {model} REST generated! Size: {len(img_bytes)//1024}KB")
                             return img_bytes
+                elif resp.status_code == 403:
+                    print(f"[ImageGen] REST {model} (403, key skipped): {resp.text[:150]}")
+                    denied.add(key)
+                    break
+                elif resp.status_code == 429:
+                    print(f"[ImageGen] REST {model} (429 quota): {resp.text[:150]}")
+                    time.sleep(3)
                 else:
                     print(f"[ImageGen] REST {model} ({resp.status_code}): {resp.text[:200]}")
             except Exception as e:
@@ -221,6 +254,8 @@ def generate_image_bytes(post_data: dict) -> bytes | None:
     # Both failed - text-only post. NO Pillow/Python card ever.
     print(
         "[ImageGen] Both Gemini sources failed. Post will be TEXT-ONLY.\n"
-        "[ImageGen] Verify GEMINI_API_KEY(s) and GEMINI_COOKIES in GitHub Secrets.\n"
+        "[ImageGen] Gemini API keys returned 429 (quota exceeded) or 403 (project denied).\n"
+        "[ImageGen] FIX: enable billing or add image-generation quota at ai.google.dev, create a\n"
+        "[ImageGen] fresh API key, and refresh GEMINI_COOKIES (cookies currently expired).\n"
     )
     return None
