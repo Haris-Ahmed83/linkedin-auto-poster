@@ -40,18 +40,17 @@ def _build_image_prompt(topic: str, text: str = "") -> str:
 # free-tier Gemini Developer API keys, so we use the modern generateContent
 # endpoint with Gemini's native image models (Nano Banana family).
 _GEMINI_IMAGE_MODELS = [
-    "gemini-2.5-flash-image",
-    "gemini-2.0-flash-preview-image-generation",
     "gemini-2.0-flash",
+    "gemini-2.0-flash-exp",
+    "gemini-2.5-flash",
 ]
-
 
 def _try_gemini_api_key(topic: str, text: str) -> bytes | None:
     """
     Generate an image via the official Gemini API using generateContent and
-    Gemini's native image models. Works with normal (free-tier) API keys.
+    Gemini's native image models. Works with normal API keys.
     Tries google-genai SDK first, then REST API, across all configured keys.
-    Denied keys are skipped; quota-limited keys get a short pause between attempts.
+    Also falls back to imagen-3.0-generate-001 via predict API.
     """
     if not GEMINI_API_KEYS:
         print("[ImageGen] GEMINI_API_KEYS not configured - skipping Gemini API.")
@@ -60,7 +59,7 @@ def _try_gemini_api_key(topic: str, text: str) -> bytes | None:
     prompt = _build_image_prompt(topic, text)
 
     def failure_state(msg: str) -> str:
-        if "denied access" in msg or "PERMISSION_DENIED" in msg:
+        if "denied access" in msg or "PERMISSION_DENIED" in msg or "403" in msg:
             return "denied"
         if "RESOURCE_EXHAUSTED" in msg or "Quota" in msg or "429" in msg:
             return "quota"
@@ -77,7 +76,39 @@ def _try_gemini_api_key(topic: str, text: str) -> bytes | None:
         random.shuffle(keys)
         saw_quota = False
 
-        # 1) google-genai SDK
+        # 1) Try standard Imagen 3 via predict (REST API)
+        for key in keys:
+            if key in denied:
+                continue
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-001:predict?key={key}"
+            payload = {
+                "instances": [{"prompt": prompt[:1000]}],
+                "parameters": {"sampleCount": 1, "aspectRatio": "16:9"}
+            }
+            try:
+                print(f"[ImageGen] Trying imagen-3.0-generate-001 via predict (key ...{key[-4:]})...")
+                resp = requests.post(url, json=payload, timeout=90)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if "predictions" in data and len(data["predictions"]) > 0:
+                        img_b64 = data["predictions"][0].get("bytesBase64Encoded")
+                        if img_b64:
+                            img_bytes = base64.b64decode(img_b64)
+                            print(f"[ImageGen] imagen-3.0 predict generated! Size: {len(img_bytes)//1024}KB")
+                            return img_bytes, True
+                elif resp.status_code == 403:
+                    print(f"[ImageGen] predict (403, key skipped)")
+                    denied.add(key)
+                elif resp.status_code == 429:
+                    saw_quota = True
+                    print(f"[ImageGen] predict (429 quota)")
+                    time.sleep(3)
+                else:
+                    print(f"[ImageGen] predict ({resp.status_code}): {resp.text[:150]}")
+            except Exception as e:
+                print(f"[ImageGen] predict error: {e}")
+
+        # 2) google-genai SDK for gemini flash models
         try:
             from google import genai
             from google.genai import types
@@ -113,9 +144,9 @@ def _try_gemini_api_key(topic: str, text: str) -> bytes | None:
                         if state == "quota":
                             saw_quota = True
                         pause_on_quota(msg)
-                        print(f"[ImageGen] SDK error ({model}, key ...{key[-4:]}): {msg}")
+                        print(f"[ImageGen] SDK error ({model}): {msg[:50]}...")
 
-        # 2) REST API
+        # 3) REST API for gemini flash models
         for key in keys:
             if key in denied:
                 continue
@@ -140,15 +171,15 @@ def _try_gemini_api_key(topic: str, text: str) -> bytes | None:
                                 print(f"[ImageGen] Gemini {model} REST generated! Size: {len(img_bytes)//1024}KB")
                                 return img_bytes, True
                     elif resp.status_code == 403:
-                        print(f"[ImageGen] REST {model} (403, key skipped): {resp.text[:150]}")
+                        print(f"[ImageGen] REST {model} (403, key skipped)")
                         denied.add(key)
                         break
                     elif resp.status_code == 429:
                         saw_quota = True
-                        print(f"[ImageGen] REST {model} (429 quota): {resp.text[:150]}")
+                        print(f"[ImageGen] REST {model} (429 quota)")
                         time.sleep(3)
                     else:
-                        print(f"[ImageGen] REST {model} ({resp.status_code}): {resp.text[:200]}")
+                        print(f"[ImageGen] REST {model} ({resp.status_code}): {resp.text[:100]}...")
                 except Exception as e:
                     print(f"[ImageGen] REST error ({model}): {e}")
 
